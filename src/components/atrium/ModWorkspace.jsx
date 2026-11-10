@@ -43,10 +43,109 @@ export default function ModWorkspace({
   bpm,
 }) {
   const canvasRef = useRef(null);
+  const scopeWrapRef = useRef(null);
   const [quickTargetParam, setQuickTargetParam] = useState('cs_width');
+
+  // Interactive zoom & height state for the oscilloscope
+  const [timeZoom, setTimeZoom] = useState(1.0); // 0.25x to 8.0x
+  const [ampZoom, setAmpZoom] = useState(1.0); // 0.5x to 3.0x
+  const [scopeHeight, setScopeHeight] = useState(210);
+  const [canvasSize, setCanvasSize] = useState({ width: 480, height: 210 });
+  const zoomDragRef = useRef(null);
 
   const activeMod =
     modulators.find((m) => m.id === selectedModId) || modulators[0];
+
+  // Keep canvas resolution synced to container dimensions
+  useEffect(() => {
+    const el = scopeWrapRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setCanvasSize({
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        });
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [scopeHeight]);
+
+  // Drag on waveform canvas to zoom time (horizontal/vertical drag) and amplitude
+  const handleScopeMouseDown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    zoomDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startTimeZoom: timeZoom,
+      startAmpZoom: ampZoom,
+    };
+
+    const handleMove = (moveEvent) => {
+      if (!zoomDragRef.current) return;
+      const dx = moveEvent.clientX - zoomDragRef.current.startX;
+      const dy = zoomDragRef.current.startY - moveEvent.clientY;
+      // Dragging up or right zooms in time; holding Shift or strong vertical adjusts vertical gain
+      const timeFactor = Math.pow(1.008, dx + dy);
+      const nextTimeZoom = Math.max(
+        0.25,
+        Math.min(8.0, zoomDragRef.current.startTimeZoom * timeFactor)
+      );
+      setTimeZoom(nextTimeZoom);
+
+      if (moveEvent.shiftKey) {
+        const ampFactor = Math.pow(1.006, dy);
+        setAmpZoom(
+          Math.max(0.5, Math.min(3.0, zoomDragRef.current.startAmpZoom * ampFactor))
+        );
+      }
+    };
+
+    const handleUp = () => {
+      zoomDragRef.current = null;
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  };
+
+  const handleScopeWheel = (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    if (e.shiftKey) {
+      setAmpZoom((prev) => Math.max(0.5, Math.min(3.0, prev * factor)));
+    } else {
+      setTimeZoom((prev) => Math.max(0.25, Math.min(8.0, prev * factor)));
+    }
+  };
+
+  // Bottom handle drag to resize the waveform box height
+  const handleResizeMouseDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startH = scopeHeight;
+
+    const onMove = (moveEvent) => {
+      const nextH = Math.max(96, Math.min(420, startH + (moveEvent.clientY - startY)));
+      setScopeHeight(nextH);
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   // Draw real-time animated waveform preview for the selected modulator + ghost overlays of other active modulators
   useEffect(() => {
@@ -58,10 +157,14 @@ export default function ModWorkspace({
 
     ctx.clearRect(0, 0, w, h);
 
-    // Subtle dark grid matching Atrium's AUTO lane grid
+    const windowSeconds = 2.0 / timeZoom; // Zoomable time window
+
+    // Subtle dark grid matching Atrium's AUTO lane grid (scales with zoom)
     ctx.strokeStyle = '#1a232b';
     ctx.lineWidth = 1;
-    for (let x = 0; x <= w; x += w / 8) {
+    const gridCols = Math.max(4, Math.min(16, Math.round(8 * timeZoom)));
+    for (let i = 0; i <= gridCols; i++) {
+      const x = (i / gridCols) * w;
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h);
@@ -81,6 +184,12 @@ export default function ModWorkspace({
     ctx.lineTo(w, h / 2);
     ctx.stroke();
 
+    const mapValToY = (val, polarity) => {
+      const scaled = Math.max(-1.2, Math.min(1.2, val * ampZoom));
+      const normY = polarity === 'unipolar' ? 1 - scaled : (1 - scaled) * 0.5;
+      return 10 + normY * (h - 20);
+    };
+
     // Draw secondary active modulators faintly in background for multi-mod visual context
     modulators.forEach((mod) => {
       if (mod.id === activeMod.id || !mod.enabled) return;
@@ -88,10 +197,10 @@ export default function ModWorkspace({
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       for (let px = 0; px < w; px += 3) {
-        const tOffset = (px / w) * 2.0;
-        const val = evaluateModulator(mod, simTime + tOffset - 1.0, bpm);
-        const normY = mod.polarity === 'unipolar' ? 1 - val : (1 - val) * 0.5;
-        const py = 10 + normY * (h - 20);
+        const sampleTime =
+          simTime - windowSeconds * 0.5 + (px / w) * windowSeconds;
+        const val = evaluateModulator(mod, sampleTime, bpm);
+        const py = mapValToY(val, mod.polarity);
         if (px === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       }
@@ -103,15 +212,10 @@ export default function ModWorkspace({
     ctx.lineWidth = 2.2;
     ctx.beginPath();
 
-    const points = [];
-    const windowSeconds = 2.0; // 2-second rolling oscilloscope window
     for (let px = 0; px <= w; px += 2) {
       const sampleTime = simTime - windowSeconds * 0.5 + (px / w) * windowSeconds;
       const val = evaluateModulator(activeMod, sampleTime, bpm);
-      const normY =
-        activeMod.polarity === 'unipolar' ? 1 - val : (1 - val) * 0.5;
-      const py = 10 + normY * (h - 20);
-      points.push({ x: px, y: py });
+      const py = mapValToY(val, activeMod.polarity);
       if (px === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }
@@ -130,9 +234,7 @@ export default function ModWorkspace({
     // Playhead indicator in center (current instant `simTime`)
     const playheadX = w * 0.5;
     const currentVal = evaluateModulator(activeMod, simTime, bpm);
-    const currentNormY =
-      activeMod.polarity === 'unipolar' ? 1 - currentVal : (1 - currentVal) * 0.5;
-    const playheadY = 10 + currentNormY * (h - 20);
+    const playheadY = mapValToY(currentVal, activeMod.polarity);
 
     ctx.strokeStyle = '#ffffff55';
     ctx.lineWidth = 1;
@@ -149,7 +251,7 @@ export default function ModWorkspace({
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
-  }, [activeMod, modulators, simTime, bpm]);
+  }, [activeMod, modulators, simTime, bpm, timeZoom, ampZoom, canvasSize]);
 
   const handleDragStart = (e, mod) => {
     e.dataTransfer.setData('application/atrium-modulator', mod.id);
@@ -162,7 +264,7 @@ export default function ModWorkspace({
   return (
     <div className="flex-1 grid grid-cols-12 gap-0 bg-[#0d1115] overflow-hidden select-none">
       {/* COLUMN 1 (3 Cols): Modulator Library & Active Modulators List */}
-      <div className="col-span-3 border-r border-[#222b33] bg-[#13181d] flex flex-col justify-between p-2 overflow-hidden">
+      <div className="col-span-3 border-r border-[#222b33] bg-[#13181d] flex flex-col justify-start p-2 overflow-hidden">
         {/* Create Modulator Palette (8 required types) */}
         <div>
           <div className="flex items-center justify-between mb-1.5 px-1">
@@ -277,11 +379,11 @@ export default function ModWorkspace({
         </div>
       </div>
 
-      {/* COLUMN 2 (5 Cols): Selected Modulator Interactive Controls & Live Oscilloscope */}
+      {/* COLUMN 2 (5 Cols): Selected Modulator Interactive Controls & Live Oscilloscope (Top-Justified) */}
       {activeMod && (
-        <div className="col-span-5 border-r border-[#222b33] bg-[#101519] p-2.5 flex flex-col justify-between overflow-hidden">
+        <div className="col-span-5 border-r border-[#222b33] bg-[#101519] p-2.5 flex flex-col justify-start gap-2 overflow-y-auto">
           {/* Modulator Header Bar: Name, Type/Waveform Selector, Tempo Sync, Polarity, Drag Pill */}
-          <div className="flex items-center justify-between gap-2 border-b border-[#1f2830] pb-1.5">
+          <div className="flex items-center justify-between gap-2 border-b border-[#1f2830] pb-1.5 shrink-0">
             <div className="flex items-center gap-2">
               <span
                 className="w-2.5 h-2.5 rounded-full"
@@ -327,18 +429,29 @@ export default function ModWorkspace({
             </div>
           </div>
 
-          {/* Center Animated Waveform Visualiser + Type-Specific Interactive Overlay (STEP bars / CURVE nodes) */}
-          <div className="relative my-1.5 h-[96px] rounded border border-[#26313a] bg-[#070a0d] overflow-hidden">
+          {/* Top-Justified Animated Waveform Visualiser (Drag to Zoom + Bottom Resize Handle) */}
+          <div
+            ref={scopeWrapRef}
+            style={{ height: scopeHeight }}
+            onMouseDown={activeMod.type !== 'STEP' ? handleScopeMouseDown : undefined}
+            onWheel={handleScopeWheel}
+            onDoubleClick={() => {
+              setTimeZoom(1.0);
+              setAmpZoom(1.0);
+            }}
+            className="relative shrink-0 rounded border border-[#26313a] bg-[#070a0d] overflow-hidden cursor-ns-resize group"
+            title="Drag up/down or left/right to zoom waveform • Shift+drag for vertical gain • Double-click to reset zoom"
+          >
             <canvas
               ref={canvasRef}
-              width={480}
-              height={96}
+              width={canvasSize.width}
+              height={canvasSize.height}
               className="w-full h-full block"
             />
 
             {/* Interactive Step Sequencer Bars when type === 'STEP' */}
             {activeMod.type === 'STEP' && (
-              <div className="absolute inset-0 flex items-end gap-1 p-2 bg-black/40">
+              <div className="absolute inset-0 flex items-end gap-1 p-2 pb-3 bg-black/40">
                 {activeMod.steps.map((val, idx) => (
                   <div
                     key={idx}
@@ -376,10 +489,56 @@ export default function ModWorkspace({
                 DEPTH {Math.round(activeMod.depth * 100)}%
               </span>
             </div>
+
+            {/* Top-right Interactive Zoom Controls & Readout */}
+            <div
+              onMouseDown={(e) => e.stopPropagation()}
+              className="absolute top-1.5 right-2 flex items-center gap-1 bg-black/70 border border-[#26313a] rounded px-1.5 py-0.5"
+            >
+              <span className="text-[8px] font-mono text-[#6c7d8c] mr-0.5">
+                DRAG ZOOM
+              </span>
+              <button
+                type="button"
+                onClick={() => setTimeZoom((z) => Math.max(0.25, +(z / 1.25).toFixed(2)))}
+                className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
+                title="Zoom Out"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeZoom(1.0);
+                  setAmpZoom(1.0);
+                }}
+                className="px-1 text-[9px] font-mono text-[#38bdf8] hover:underline"
+                title="Click to reset zoom (1.0x)"
+              >
+                {timeZoom.toFixed(2)}x
+              </button>
+              <button
+                type="button"
+                onClick={() => setTimeZoom((z) => Math.min(8.0, +(z * 1.25).toFixed(2)))}
+                className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
+                title="Zoom In"
+              >
+                +
+              </button>
+            </div>
+
+            {/* Bottom Drag Handle to resize waveform height */}
+            <div
+              onMouseDown={handleResizeMouseDown}
+              className="absolute inset-x-0 bottom-0 h-2.5 bg-gradient-to-t from-black/80 to-transparent hover:from-[#38bdf8]/30 cursor-row-resize flex items-center justify-center"
+              title="Drag to resize waveform height"
+            >
+              <span className="w-8 h-[2px] rounded-full bg-[#3a4956] group-hover:bg-[#38bdf8]" />
+            </div>
           </div>
 
           {/* Modulator Parameter Sliders Row: Rate, Depth, Phase, Offset, Smoothing, Sync & Polarity */}
-          <div className="grid grid-cols-6 gap-2 items-center pt-0.5">
+          <div className="grid grid-cols-6 gap-2 items-center shrink-0">
             {/* RATE or MACRO VALUE */}
             {activeMod.type === 'MACRO' ? (
               <div className="col-span-2 bg-[#151b21] p-1.5 rounded border border-[#242e38]">
@@ -568,7 +727,7 @@ export default function ModWorkspace({
       )}
 
       {/* COLUMN 3 (4 Cols): Modulation Routing Matrix (SOURCE → DESTINATION) */}
-      <div className="col-span-4 bg-[#12171c] p-2.5 flex flex-col justify-between overflow-hidden">
+      <div className="col-span-4 bg-[#12171c] p-2.5 flex flex-col justify-start overflow-hidden">
         {/* Header + Quick Assignment Bar */}
         <div className="flex items-center justify-between border-b border-[#222b33] pb-1.5">
           <div className="flex items-center gap-1.5">
