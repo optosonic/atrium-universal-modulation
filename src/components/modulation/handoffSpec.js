@@ -111,8 +111,8 @@ export const DIVISION_BEATS = {
   \`beatsPerSec = bpm / 60\`
   \`freq = mod.tempoSync ? beatsPerSec / DIVISION_BEATS[mod.syncRate] : mod.rate\`
   Do **not** multiply \`RANDOM\` or \`LFO\` frequencies by arbitrary extra scalars.
-- **For Step Sequencers (\`STEP\`):**
-  In \`tempoSync\` mode, \`syncRate\` defines the **per-step note division** (e.g. \`1/4\` = 1 beat per step = 2 steps/sec at 120 BPM; \`1/8\` = 0.5 beats per step = 4 steps/sec at 120 BPM). In free mode, \`mod.rate\` is steps per second. Use \`getStepProgress(mod, t, bpm)\` for both audio/control evaluation and the UI step highlight so they never drift.
+- **For Step Sequencers (\`STEP\` — 8, 16, or 32 Steps & Euclidean):**
+  In \`tempoSync\` mode, \`syncRate\` defines the **per-step note division** (e.g. \`1/4\` = 1 beat per step = 2 steps/sec at 120 BPM; \`1/8\` = 0.5 beats per step = 4 steps/sec at 120 BPM; \`1/16\` = 0.25 beats per step = 8 steps/sec at 120 BPM). In free mode, \`mod.rate\` is integer steps per second (1..32 stp/s). Use \`getStepProgress(mod, t, bpm)\` for both audio/control evaluation and the UI step highlight so they never drift.
 
 ---
 
@@ -123,7 +123,8 @@ export const DIVISION_BEATS = {
    - \`liveState = liveStates[param.id]\` (\`{ baseValue, automatedValue, modulatedValue, normBase, normAuto, normLive, contributions }\`)
    - \`onChangeBase(param.id, newValue)\`
    - \`onDropModulator(modulatorId, param.id)\`
-   - Plus \`onOpenLearnPopup(param.id, anchorRect)\` on right-click or clicking the top-right badge.
+   - Plus \`onOpenLearnPopup(param.id, anchorRect)\` on direct click (without vertical drag), right-click, or clicking the top-right badge.
+   - Format all parameter paths across dropdowns, routing matrices, and popups using the scoped 3-part format: \`Plugin · Group · Name\` (via \`formatParameterScope(param)\`).
 2. **Drag-and-Drop Patching Protocol:**
    - Modulator pills and the editor's \`DRAG TO TARGET\` handle set \`e.dataTransfer.setData('application/atrium-modulator', mod.id)\`.
    - Any knob, slider, or fader accepts drops with that MIME type and calls \`addAssignment(modulatorId, param.id)\`.

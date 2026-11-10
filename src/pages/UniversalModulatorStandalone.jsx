@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import useModulationEngine from '@/hooks/useModulationEngine';
 import StandaloneTransportBar from '@/components/modulation/StandaloneTransportBar';
 import ModulationTargetBench from '@/components/modulation/ModulationTargetBench';
 import ModWorkspace from '@/components/atrium/ModWorkspace';
 import ParameterLearnPopup from '@/components/atrium/ParameterLearnPopup';
+import CursorHandoffSpec from '@/components/modulation/CursorHandoffSpec';
 
 /**
  * UNIVERSAL MODULATOR — STANDALONE DEMONSTRATION VIEW
@@ -12,6 +13,7 @@ import ParameterLearnPopup from '@/components/atrium/ParameterLearnPopup';
  */
 export default function UniversalModulatorStandalone() {
   const engine = useModulationEngine();
+  const [showSpec, setShowSpec] = useState(false);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#121619] text-[#d6e2ea] overflow-hidden">
@@ -26,6 +28,7 @@ export default function UniversalModulatorStandalone() {
         onChangeBpm={engine.setBpm}
         modCount={engine.modulators.length}
         assignmentCount={engine.assignments.length}
+        onOpenSpec={() => setShowSpec(true)}
       />
 
       {/* MODULATION TARGETS — the bench that proves the engine is universal */}
@@ -130,6 +133,8 @@ export default function UniversalModulatorStandalone() {
           onCreateModulatorAndAssign={engine.createModulatorAndAssign}
         />
       )}
+
+      {showSpec && <CursorHandoffSpec onClose={() => setShowSpec(false)} />}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   RotateCcw,
   Power,
   ExternalLink,
+  FileCode2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -22,6 +23,7 @@ export default function StandaloneTransportBar({
   onChangeBpm,
   modCount,
   assignmentCount,
+  onOpenSpec,
 }) {
   const totalBeats = (simTime * bpm) / 60;
   const bar = Math.floor(totalBeats / 4) + 1;
@@ -103,6 +105,16 @@ export default function StandaloneTransportBar({
       </div>
 
       <div className="flex items-center gap-2">
+        {onOpenSpec && (
+          <button
+            type="button"
+            onClick={onOpenSpec}
+            className="atrium-btn-cyan h-7 px-2.5 rounded text-[9px] font-bold flex items-center gap-1"
+            title="View & copy the full integration prompt for Atrium's AUTO tab"
+          >
+            <FileCode2 className="w-3 h-3" /> INTEGRATION PROMPT
+          </button>
+        )}
         <Link
           to="/atrium"
           className="atrium-btn-metal h-7 px-2.5 rounded border border-[#3d4a55] text-[9px] font-bold text-[#c5d4e0] hover:text-white flex items-center gap-1"
