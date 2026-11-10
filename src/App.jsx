@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import AtriumPrototype from './pages/AtriumPrototype';
+import UniversalModulatorStandalone from './pages/UniversalModulatorStandalone';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -34,7 +35,8 @@ const AuthenticatedApp = () => {
   // Render the main app
   return (
     <Routes>
-      <Route path="/" element={<AtriumPrototype />} />
+      <Route path="/" element={<UniversalModulatorStandalone />} />
+      <Route path="/atrium" element={<AtriumPrototype />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

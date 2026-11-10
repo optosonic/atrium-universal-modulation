@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import {
   Play,
   Square,
@@ -7,6 +8,7 @@ import {
   Clock,
   Volume2,
   Sliders,
+  ExternalLink,
 } from 'lucide-react';
 
 /**
@@ -171,6 +173,13 @@ export default function AtriumTopAndTrackBar({
 
       {/* Right View & Mode Controls */}
       <div className="flex flex-col gap-1 items-end">
+        <Link
+          to="/"
+          className="px-2 py-0.5 rounded-sm text-[8px] font-bold tracking-wider atrium-btn-cyan flex items-center gap-1"
+          title="Open the standalone Universal Modulator reference view"
+        >
+          MODULATOR ONLY VIEW <ExternalLink className="w-2.5 h-2.5" />
+        </Link>
         <div className="flex items-center gap-1">
           <span className="text-[8px] text-[#7a8b99] mr-1">VIEW</span>
           {['INFO', 'MOVIE', 'ORBIT', 'AUDIO', 'MIDI', 'HANDS'].map((v, i) => (
