@@ -6,24 +6,26 @@ import {
   INITIAL_PARAMETERS,
   evaluateModulator,
 } from '@/lib/modulationEngine';
+import useModulationEngine from '@/hooks/useModulationEngine';
 import StepSequencerOverlay from './StepSequencerOverlay';
+import ModRoutingMatrix from './ModRoutingMatrix';
 import {
   Plus,
   Trash2,
   GripVertical,
-  ArrowRight,
-  Sliders,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 /**
- * Interactive Modulator Workspace inside the Atrium AUTO tab when `MOD` is selected.
- * Features:
- * 1. Left Column: Compact Modulator Creator (+ LFO, RANDOM, ENVELOPE, STEP, FOLLOWER, CURVE, MACRO, FUNCTION)
- *    & Active Modulator Pills (draggable directly onto any knob/slider in Atrium!)
- * 2. Center Column: Active Modulator Interactive Controls + High-FPS Animated Waveform Canvas
- *    (supports custom step bars, curve drawing, ADSR handles, rate, depth, phase, offset, smoothing, tempo sync)
- * 3. Right Column: Universal Modulation Routing Matrix (SOURCE → DESTINATION) with live depth bars,
- *    polarity/invert toggles, and quick target assignment.
+ * Interactive Modulator Workspace inside the Atrium AUTO tab when `MOD` is selected,
+ * and inside the Standalone demonstration view.
+ *
+ * 1. Left Column: Modulator Library (+ LFO, RANDOM, ENVELOPE, STEP, FOLLOWER, CURVE, MACRO, FUNCTION)
+ *    & Active Modulator Pills (draggable onto any parameter with custom drag indicator + target highlighting).
+ * 2. Center Column: Selected Modulator Controls + High-FPS Waveform Visualiser with toggleable
+ *    background traces (`BG TRACES`), drag-to-zoom, and interactive Step/Envelope editors.
+ * 3. Right Column: Universal Modulation Routing Matrix (Compact & Expanded views + Selected-Target Inspector).
  */
 export default function ModWorkspace({
   modulators = INITIAL_MODULATORS,
@@ -41,10 +43,25 @@ export default function ModWorkspace({
   onOpenLearnPopup = () => {},
   simTime = 0,
   bpm = 120,
+  showTargetInspector = false,
 }) {
   const canvasRef = useRef(null);
   const scopeWrapRef = useRef(null);
-  const [quickTargetParam, setQuickTargetParam] = useState('cs_width');
+  const [localTargetParam, setLocalTargetParam] = useState('cs_width');
+  const [showBgTraces, setShowBgTraces] = useState(true);
+
+  let engineCtx = null;
+  try {
+    engineCtx = useModulationEngine();
+  } catch {
+    engineCtx = null;
+  }
+
+  const selectedTargetParamId = engineCtx?.selectedTargetParamId || localTargetParam;
+  const handleSelectTargetParam = (paramId) => {
+    setLocalTargetParam(paramId);
+    engineCtx?.setSelectedTargetParamId?.(paramId);
+  };
 
   // Interactive zoom & height state for the oscilloscope
   const [timeZoom, setTimeZoom] = useState(1.0); // 0.25x to 8.0x
@@ -94,7 +111,6 @@ export default function ModWorkspace({
       if (!zoomDragRef.current) return;
       const dx = moveEvent.clientX - zoomDragRef.current.startX;
       const dy = zoomDragRef.current.startY - moveEvent.clientY;
-      // Dragging up or right zooms in time; holding Shift or strong vertical adjusts vertical gain
       const timeFactor = Math.pow(1.008, dx + dy);
       const nextTimeZoom = Math.max(
         0.25,
@@ -151,7 +167,7 @@ export default function ModWorkspace({
     window.addEventListener('mouseup', onUp);
   };
 
-  // Draw real-time animated waveform preview for the selected modulator + ghost overlays of other active modulators
+  // Draw real-time animated waveform preview for the selected modulator + optional ghost overlays
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !activeMod) return;
@@ -164,9 +180,9 @@ export default function ModWorkspace({
     // When STEP is active, StepSequencerOverlay renders the dedicated step grid directly
     if (activeMod.type === 'STEP') return;
 
-    const windowSeconds = 2.0 / timeZoom; // Zoomable time window
+    const windowSeconds = 2.0 / timeZoom;
 
-    // Subtle dark grid matching Atrium's AUTO lane grid (scales with zoom)
+    // Subtle dark grid matching Atrium's AUTO lane grid
     ctx.strokeStyle = '#1a232b';
     ctx.lineWidth = 1;
     const gridCols = Math.max(4, Math.min(16, Math.round(8 * timeZoom)));
@@ -198,26 +214,28 @@ export default function ModWorkspace({
       return padY + normY * (h - padY * 2);
     };
 
-    // Draw secondary active modulators faintly in background for multi-mod visual context
-    safeModulators.forEach((mod) => {
-      if (mod.id === activeMod.id || !mod.enabled) return;
-      ctx.strokeStyle = `${mod.color}33`;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      for (let px = 0; px < w; px += 3) {
-        const sampleTime =
-          simTime - windowSeconds * 0.5 + (px / w) * windowSeconds;
-        const val = evaluateModulator(mod, sampleTime, bpm);
-        const py = mapValToY(val, mod.polarity);
-        if (px === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.stroke();
-    });
+    // Subdued background traces of other active continuous modulators (when showBgTraces is on)
+    if (showBgTraces) {
+      safeModulators.forEach((mod) => {
+        if (mod.id === activeMod.id || !mod.enabled || mod.type === 'STEP') return;
+        ctx.strokeStyle = `${mod.color}2e`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let px = 0; px < w; px += 3) {
+          const sampleTime =
+            simTime - windowSeconds * 0.5 + (px / w) * windowSeconds;
+          const val = evaluateModulator(mod, sampleTime, bpm);
+          const py = mapValToY(val, mod.polarity);
+          if (px === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      });
+    }
 
-    // Draw selected modulator waveform with glowing fill
+    // Draw selected modulator waveform with dominant stroke & fill
     ctx.strokeStyle = activeMod.color;
-    ctx.lineWidth = 2.2;
+    ctx.lineWidth = 2.3;
     ctx.beginPath();
 
     for (let px = 0; px <= w; px += 2) {
@@ -229,13 +247,13 @@ export default function ModWorkspace({
     }
     ctx.stroke();
 
-    // Soft gradient fill under curve
+    const baselineY = activeMod.polarity === 'unipolar' ? h - padY : h / 2;
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, `${activeMod.color}40`);
-    grad.addColorStop(1, `${activeMod.color}02`);
+    grad.addColorStop(0, `${activeMod.color}3d`);
+    grad.addColorStop(1, `${activeMod.color}03`);
     ctx.fillStyle = grad;
-    ctx.lineTo(w, h / 2);
-    ctx.lineTo(0, h / 2);
+    ctx.lineTo(w, baselineY);
+    ctx.lineTo(0, baselineY);
     ctx.closePath();
     ctx.fill();
 
@@ -259,11 +277,50 @@ export default function ModWorkspace({
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
-  }, [activeMod, modulators, simTime, bpm, timeZoom, ampZoom, canvasSize]);
+  }, [
+    activeMod,
+    safeModulators,
+    simTime,
+    bpm,
+    timeZoom,
+    ampZoom,
+    canvasSize,
+    showBgTraces,
+  ]);
 
+  // Create custom colour-coded drag badge & notify engine to highlight all eligible targets
   const handleDragStart = (e, mod) => {
     e.dataTransfer.setData('application/atrium-modulator', mod.id);
     e.dataTransfer.effectAllowed = 'link';
+    engineCtx?.setDraggingModId?.(mod.id);
+
+    // Custom high-contrast drag ghost pill containing modulator name & colour
+    const badge = document.createElement('div');
+    badge.style.position = 'fixed';
+    badge.style.top = '-1000px';
+    badge.style.left = '-1000px';
+    badge.style.padding = '4px 10px';
+    badge.style.borderRadius = '4px';
+    badge.style.background = '#0d1318';
+    badge.style.border = `2px solid ${mod.color}`;
+    badge.style.color = '#ffffff';
+    badge.style.fontFamily = 'JetBrains Mono, monospace';
+    badge.style.fontSize = '11px';
+    badge.style.fontWeight = '700';
+    badge.style.display = 'flex';
+    badge.style.alignItems = 'center';
+    badge.style.gap = '6px';
+    badge.style.boxShadow = `0 4px 14px rgba(0,0,0,0.85)`;
+    badge.innerHTML = `<span style="width:8px;height:8px;border-radius:999px;background:${mod.color};display:inline-block;"></span><span>ASSIGN ${mod.name}</span>`;
+    document.body.appendChild(badge);
+    e.dataTransfer.setDragImage(badge, 14, 14);
+    setTimeout(() => {
+      if (badge.parentNode) badge.parentNode.removeChild(badge);
+    }, 0);
+  };
+
+  const handleDragEnd = () => {
+    engineCtx?.setDraggingModId?.(null);
   };
 
   const currentTypeMeta =
@@ -273,6 +330,8 @@ export default function ModWorkspace({
       label: 'LFO',
       subtypes: ['sine', 'triangle', 'saw', 'square'],
     };
+
+  const currentLiveOut = activeMod ? evaluateModulator(activeMod, simTime, bpm) : 0;
 
   return (
     <div className="flex-1 grid grid-cols-12 gap-0 bg-[#0d1115] overflow-hidden select-none">
@@ -315,12 +374,17 @@ export default function ModWorkspace({
               (a) => a.modulatorId === mod.id
             ).length;
             const liveOut = evaluateModulator(mod, simTime, bpm);
+            const meterPct =
+              mod.polarity === 'unipolar'
+                ? Math.min(100, Math.max(4, liveOut * 100))
+                : Math.min(100, Math.max(4, ((liveOut + 1) / 2) * 100));
 
             return (
               <div
                 key={mod.id}
                 draggable
                 onDragStart={(e) => handleDragStart(e, mod)}
+                onDragEnd={handleDragEnd}
                 onClick={() => onSelectMod(mod.id)}
                 className={`group flex items-center justify-between px-2 py-1.5 rounded border cursor-grab active:cursor-grabbing transition-all ${
                   isSelected
@@ -331,7 +395,7 @@ export default function ModWorkspace({
                   borderLeftWidth: '3px',
                   borderLeftColor: mod.color,
                 }}
-                title="Drag me directly onto any Atrium knob or slider to assign modulation!"
+                title="Drag onto any Atrium knob or slider to assign modulation"
               >
                 <div className="flex items-center gap-1.5 min-w-0">
                   <GripVertical className="w-3.5 h-3.5 text-[#596975] group-hover:text-white shrink-0" />
@@ -348,6 +412,7 @@ export default function ModWorkspace({
                       backgroundColor: mod.color,
                       boxShadow: mod.enabled ? `0 0 6px ${mod.color}` : 'none',
                     }}
+                    title={mod.enabled ? 'Disable modulator' : 'Enable modulator'}
                   />
                   <div className="truncate">
                     <div className="text-[11px] font-bold text-white leading-none flex items-center gap-1.5">
@@ -365,7 +430,7 @@ export default function ModWorkspace({
                     <div
                       className="h-full transition-all duration-75"
                       style={{
-                        width: `${Math.min(100, Math.max(5, ((liveOut + 1) / 2) * 100))}%`,
+                        width: `${meterPct}%`,
                         backgroundColor: mod.color,
                       }}
                     />
@@ -381,6 +446,7 @@ export default function ModWorkspace({
                         onDeleteModulator(mod.id);
                       }}
                       className="opacity-0 group-hover:opacity-100 text-[#6c7d8c] hover:text-red-400 transition-opacity"
+                      title="Delete modulator"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -395,7 +461,7 @@ export default function ModWorkspace({
       {/* COLUMN 2 (5 Cols): Selected Modulator Interactive Controls & Live Oscilloscope (Top-Justified) */}
       {activeMod && (
         <div className="col-span-5 border-r border-[#222b33] bg-[#101519] p-2.5 flex flex-col justify-start gap-2 overflow-y-auto">
-          {/* Modulator Header Bar: Name, Type/Waveform Selector, Tempo Sync, Polarity, Drag Pill */}
+          {/* Modulator Header Bar: Name, Type/Waveform Selector, Draggable Patch Handle */}
           <div className="flex items-center justify-between gap-2 border-b border-[#1f2830] pb-1.5 shrink-0">
             <div className="flex items-center gap-2">
               <span
@@ -453,6 +519,7 @@ export default function ModWorkspace({
             <div
               draggable
               onDragStart={(e) => handleDragStart(e, activeMod)}
+              onDragEnd={handleDragEnd}
               className="px-2 py-0.5 rounded border border-dashed border-[#38bdf8] bg-[#38bdf8]/10 text-[#38bdf8] text-[9px] font-bold cursor-grab active:cursor-grabbing flex items-center gap-1 shrink-0"
               title="Drag onto any knob or slider to patch"
             >
@@ -474,12 +541,20 @@ export default function ModWorkspace({
                 <span className="text-[9px] font-mono text-[#8ea0ad]">
                   DEPTH {Math.round(activeMod.depth * 100)}%
                 </span>
+                <span className="text-[#2c3a46]">·</span>
+                <span
+                  className="text-[9px] font-mono tabular-nums"
+                  style={{ color: activeMod.color }}
+                >
+                  OUT {currentLiveOut >= 0 ? '+' : ''}
+                  {currentLiveOut.toFixed(2)}
+                </span>
               </div>
 
               <div className="flex items-center gap-1">
-                {activeMod.type === 'STEP' && (
-                  <div className="flex items-center gap-1 mr-2 border-r border-[#1f2a33] pr-2">
-                    <span className="text-[8px] font-mono text-[#5bc0de]">
+                {activeMod.type === 'STEP' ? (
+                  <div className="flex items-center gap-1 mr-1">
+                    <span className="text-[8px] font-mono text-[#5bc0de] mr-1">
                       DRAG ACROSS BARS
                     </span>
                     <button
@@ -523,37 +598,60 @@ export default function ModWorkspace({
                       CLR
                     </button>
                   </div>
+                ) : (
+                  <>
+                    {/* Toggle to show/hide other active modulators' background traces */}
+                    <button
+                      type="button"
+                      onClick={() => setShowBgTraces((v) => !v)}
+                      className={`px-1.5 py-0.2 rounded text-[8px] font-mono flex items-center gap-1 border mr-1 transition-all ${
+                        showBgTraces
+                          ? 'bg-[#15222c] border-[#38bdf8]/50 text-[#7dd3fc]'
+                          : 'bg-[#12171c] border-[#242e38] text-[#6c7d8c] hover:text-white'
+                      }`}
+                      title="Show or hide background traces of other active modulators"
+                    >
+                      {showBgTraces ? (
+                        <Eye className="w-2.5 h-2.5" />
+                      ) : (
+                        <EyeOff className="w-2.5 h-2.5" />
+                      )}
+                      <span>BG TRACES</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTimeZoom((z) => Math.max(0.25, +(z / 1.25).toFixed(2)))
+                      }
+                      className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
+                      title="Zoom Out"
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTimeZoom(1.0);
+                        setAmpZoom(1.0);
+                      }}
+                      className="px-1 text-[9px] font-mono text-[#38bdf8] hover:underline"
+                      title="Click to reset zoom (1.0x)"
+                    >
+                      {timeZoom.toFixed(2)}x
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTimeZoom((z) => Math.min(8.0, +(z * 1.25).toFixed(2)))
+                      }
+                      className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
+                      title="Zoom In"
+                    >
+                      +
+                    </button>
+                  </>
                 )}
-                <span className="text-[8px] font-mono text-[#6c7d8c] mr-0.5">
-                  {activeMod.type === 'STEP' ? 'ZOOM' : 'DRAG WAVE TO ZOOM'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setTimeZoom((z) => Math.max(0.25, +(z / 1.25).toFixed(2)))}
-                  className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
-                  title="Zoom Out"
-                >
-                  −
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTimeZoom(1.0);
-                    setAmpZoom(1.0);
-                  }}
-                  className="px-1 text-[9px] font-mono text-[#38bdf8] hover:underline"
-                  title="Click to reset zoom (1.0x)"
-                >
-                  {timeZoom.toFixed(2)}x
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTimeZoom((z) => Math.min(8.0, +(z * 1.25).toFixed(2)))}
-                  className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
-                  title="Zoom In"
-                >
-                  +
-                </button>
               </div>
             </div>
 
@@ -636,7 +734,9 @@ export default function ModWorkspace({
                 <div className="flex justify-between text-[9px] text-[#8ea0ad]">
                   <span>RATE</span>
                   <span className="font-mono text-white">
-                    {activeMod.tempoSync ? activeMod.syncRate : `${activeMod.rate.toFixed(2)}Hz`}
+                    {activeMod.tempoSync
+                      ? activeMod.syncRate
+                      : `${activeMod.rate.toFixed(2)}Hz`}
                   </span>
                 </div>
                 {activeMod.tempoSync ? (
@@ -647,7 +747,17 @@ export default function ModWorkspace({
                     }
                     className="w-full bg-[#090c0f] text-[10px] font-mono text-[#38bdf8] rounded px-1 py-0.5 mt-0.5 border border-[#26313a]"
                   >
-                    {['4/1', '2/1', '1/1', '1/2', '1/4', '1/8', '1/16', '1/4T', '1/8D'].map((r) => (
+                    {[
+                      '4/1',
+                      '2/1',
+                      '1/1',
+                      '1/2',
+                      '1/4',
+                      '1/8',
+                      '1/16',
+                      '1/4T',
+                      '1/8D',
+                    ].map((r) => (
                       <option key={r} value={r}>
                         {r}
                       </option>
@@ -792,162 +902,68 @@ export default function ModWorkspace({
               </button>
             </div>
           </div>
+
+          {/* Envelope Stage Controls when activeMod.type === 'ENVELOPE' */}
+          {activeMod.type === 'ENVELOPE' && (
+            <div className="grid grid-cols-4 gap-2 shrink-0">
+              {[
+                { key: 'a', label: 'ATTACK' },
+                { key: 'd', label: 'DECAY' },
+                { key: 's', label: 'SUSTAIN' },
+                { key: 'r', label: 'RELEASE' },
+              ].map((stage) => {
+                const val = activeMod.adsr?.[stage.key] ?? 0.3;
+                return (
+                  <div
+                    key={stage.key}
+                    className="bg-[#151b21] p-1.5 rounded border border-[#242e38]"
+                  >
+                    <div className="flex justify-between text-[8px] text-[#8ea0ad]">
+                      <span>{stage.label}</span>
+                      <span className="font-mono text-white">
+                        {Math.round(val * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.02"
+                      max="1"
+                      step="0.01"
+                      value={val}
+                      onChange={(e) =>
+                        onUpdateModulator(activeMod.id, {
+                          adsr: {
+                            ...(activeMod.adsr || { a: 0.2, d: 0.3, s: 0.5, r: 0.3 }),
+                            [stage.key]: parseFloat(e.target.value),
+                          },
+                        })
+                      }
+                      className="w-full h-1 bg-[#090c0f] rounded appearance-none accent-[#38bdf8]"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* COLUMN 3 (4 Cols): Modulation Routing Matrix (SOURCE → DESTINATION) */}
-      <div className="col-span-4 bg-[#12171c] p-2.5 flex flex-col justify-start overflow-hidden">
-        {/* Header + Quick Assignment Bar */}
-        <div className="flex items-center justify-between border-b border-[#222b33] pb-1.5">
-          <div className="flex items-center gap-1.5">
-            <Sliders className="w-3.5 h-3.5 text-[#38bdf8]" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-white">
-              MODULATION ROUTING ({safeAssignments.length})
-            </span>
-          </div>
-
-          {/* Quick Assign Dropdown for active modulator */}
-          {activeMod && (
-            <div className="flex items-center gap-1">
-              <select
-                value={quickTargetParam}
-                onChange={(e) => setQuickTargetParam(e.target.value)}
-                className="bg-[#0b0e11] border border-[#2b3640] rounded px-1.5 py-0.5 text-[9px] text-[#c5d4e0] focus:outline-none"
-              >
-                {Object.values(safeParameters).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.group} / {p.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => onAddAssignment(activeMod.id, quickTargetParam)}
-                className="atrium-btn-cyan px-2 py-0.5 rounded text-[9px] font-bold"
-              >
-                + Route {activeMod.name}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Assignment Matrix List: SOURCE → DESTINATION */}
-        <div className="flex-1 overflow-y-auto space-y-1.5 my-1.5 pr-0.5">
-          {safeAssignments.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-center text-[11px] text-[#6d7f8d] border border-dashed border-[#242e38] rounded p-4">
-              Drag any modulator onto a knob or use "+ Route" above to create universal modulation links.
-            </div>
-          ) : (
-            safeAssignments.map((asgn) => {
-              const mod = safeModulators.find((m) => m.id === asgn.modulatorId);
-              const param = safeParameters[asgn.parameterId];
-              if (!mod || !param) return null;
-              const liveVal = liveStates[param.id]?.modulatedValue ?? param.baseValue;
-
-              return (
-                <div
-                  key={asgn.id}
-                  className={`rounded border px-2.5 py-1.5 transition-all ${
-                    asgn.enabled
-                      ? 'bg-[#171e24] border-[#2b3640]'
-                      : 'bg-[#0f1317] border-[#1d252c] opacity-60'
-                  }`}
-                  style={{ borderLeft: `3px solid ${mod.color}` }}
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    {/* SOURCE → DESTINATION label */}
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={asgn.enabled}
-                        onChange={(e) =>
-                          onUpdateAssignment(asgn.id, { enabled: e.target.checked })
-                        }
-                        className="accent-[#38bdf8] cursor-pointer"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => onSelectMod(mod.id)}
-                        className="text-[10px] font-bold hover:underline shrink-0"
-                        style={{ color: mod.color }}
-                      >
-                        {mod.name}
-                      </button>
-                      <ArrowRight className="w-3 h-3 text-[#657785] shrink-0" />
-                      <button
-                        type="button"
-                        onClick={(e) =>
-                          onOpenLearnPopup(
-                            param.id,
-                            e.currentTarget.getBoundingClientRect()
-                          )
-                        }
-                        className="text-[10px] font-semibold text-[#e2ecf4] hover:text-[#38bdf8] truncate"
-                        title="Click to inspect full parameter modulation settings (Min/Max, Offset, Polarity, Invert)"
-                      >
-                        {param.group} / {param.name}
-                      </button>
-                    </div>
-
-                    {/* Live Readout + Polarity + Delete */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-[9px] font-mono text-[#5bc0de]">
-                        {param.displayFormat(liveVal)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onUpdateAssignment(asgn.id, { invert: !asgn.invert })
-                        }
-                        className={`px-1 py-0.2 rounded text-[8px] font-mono border ${
-                          asgn.invert
-                            ? 'border-[#38bdf8] text-[#38bdf8] bg-[#38bdf8]/15'
-                            : 'border-[#2c3740] text-[#7a8b99]'
-                        }`}
-                        title="Invert modulation phase"
-                      >
-                        INV
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onRemoveAssignment(asgn.id)}
-                        className="text-[#6c7f8e] hover:text-red-400 p-0.5"
-                        title="Delete routing"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Editable Depth Slider Row */}
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[8px] font-mono uppercase text-[#7a8b99] w-10">
-                      DEPTH
-                    </span>
-                    <input
-                      type="range"
-                      min="-1"
-                      max="1"
-                      step="0.01"
-                      value={asgn.depth}
-                      onChange={(e) =>
-                        onUpdateAssignment(asgn.id, {
-                          depth: parseFloat(e.target.value),
-                        })
-                      }
-                      className="flex-1 h-1 bg-[#0b0e11] rounded appearance-none cursor-pointer accent-[#38bdf8]"
-                    />
-                    <span className="text-[9px] font-mono text-white w-9 text-right">
-                      {asgn.depth >= 0 ? '+' : ''}
-                      {Math.round(asgn.depth * 100)}%
-                    </span>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+      {/* COLUMN 3 (4 Cols): Modulation Routing Matrix (SOURCE -> DESTINATION) */}
+      <ModRoutingMatrix
+        modulators={safeModulators}
+        activeMod={activeMod}
+        assignments={safeAssignments}
+        parameters={safeParameters}
+        liveStates={liveStates}
+        selectedTargetParamId={selectedTargetParamId}
+        onSelectTargetParam={handleSelectTargetParam}
+        showTargetInspector={showTargetInspector}
+        onSelectMod={onSelectMod}
+        onAddAssignment={onAddAssignment}
+        onUpdateAssignment={onUpdateAssignment}
+        onRemoveAssignment={onRemoveAssignment}
+        onOpenLearnPopup={onOpenLearnPopup}
+      />
     </div>
   );
 }
