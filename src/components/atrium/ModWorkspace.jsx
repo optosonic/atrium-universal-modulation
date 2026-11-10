@@ -474,7 +474,7 @@ export default function ModWorkspace({
               </span>
             </div>
 
-            {/* Subtype / Waveform Selector Pills */}
+            {/* Subtype / Waveform Selector Pills + Integer Step Count Stepper */}
             <div className="flex items-center gap-1 flex-wrap">
               {currentTypeMeta.subtypes.map((st) => (
                 <button
@@ -514,6 +514,82 @@ export default function ModWorkspace({
                   {st}
                 </button>
               ))}
+
+              {/* Arbitrary Integer Step Count Selector (2..32: 3, 5, 6, 7, 8, etc.) */}
+              {activeMod.type === 'STEP' && (
+                <div
+                  className="flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded bg-[#0c1116] border border-[#2a3642]"
+                  title="Set any integer number of steps (e.g. 3, 5, 6, 7, 8, 9, 12, 16, 32)"
+                >
+                  <span className="text-[8px] font-mono uppercase text-[#5bc0de]">
+                    STEPS
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cur = activeMod.steps || [];
+                      const nextLen = Math.max(2, (cur.length || 8) - 1);
+                      const nextSteps = Array.from({ length: nextLen }, (_, i) =>
+                        cur[i % (cur.length || 1)] ?? 0
+                      );
+                      onUpdateModulator(activeMod.id, {
+                        steps: nextSteps,
+                        subtype:
+                          activeMod.subtype === 'euclidean'
+                            ? 'euclidean'
+                            : `${nextLen}-step`,
+                      });
+                    }}
+                    className="px-1 text-[10px] font-mono text-[#9fb1bd] hover:text-white"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min="2"
+                    max="32"
+                    step="1"
+                    value={(activeMod.steps || []).length || 8}
+                    onChange={(e) => {
+                      const raw = parseInt(e.target.value, 10);
+                      if (Number.isNaN(raw)) return;
+                      const nextLen = Math.max(2, Math.min(32, raw));
+                      const cur = activeMod.steps || [];
+                      const nextSteps = Array.from({ length: nextLen }, (_, i) =>
+                        cur[i % (cur.length || 1)] ?? 0
+                      );
+                      onUpdateModulator(activeMod.id, {
+                        steps: nextSteps,
+                        subtype:
+                          activeMod.subtype === 'euclidean'
+                            ? 'euclidean'
+                            : `${nextLen}-step`,
+                      });
+                    }}
+                    className="w-8 bg-transparent text-center text-[10px] font-mono font-bold text-white focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cur = activeMod.steps || [];
+                      const nextLen = Math.min(32, (cur.length || 8) + 1);
+                      const nextSteps = Array.from({ length: nextLen }, (_, i) =>
+                        cur[i % (cur.length || 1)] ?? 0
+                      );
+                      onUpdateModulator(activeMod.id, {
+                        steps: nextSteps,
+                        subtype:
+                          activeMod.subtype === 'euclidean'
+                            ? 'euclidean'
+                            : `${nextLen}-step`,
+                      });
+                    }}
+                    className="px-1 text-[10px] font-mono text-[#9fb1bd] hover:text-white"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Draggable Patch Handle */}
@@ -535,9 +611,19 @@ export default function ModWorkspace({
               <div className="flex items-center gap-2">
                 <span className="text-[9px] font-mono text-[#8ea0ad]">
                   {activeMod.tempoSync
-                    ? `SYNC ${activeMod.syncRate} (${bpm} BPM)`
-                    : `FREE ${activeMod.rate.toFixed(2)} Hz`}
+                    ? `SYNC ${activeMod.syncRate}${
+                        (activeMod.rateDiv || 1) > 1 ? ` ×${activeMod.rateDiv}` : ''
+                      } (${bpm} BPM)`
+                    : `FREE ${(activeMod.rate * (activeMod.rateDiv || 1)).toFixed(2)} Hz`}
                 </span>
+                {activeMod.type === 'STEP' && (
+                  <>
+                    <span className="text-[#2c3a46]">·</span>
+                    <span className="text-[9px] font-mono text-[#5bc0de]">
+                      {(activeMod.steps || []).length} STEPS
+                    </span>
+                  </>
+                )}
                 <span className="text-[#2c3a46]">·</span>
                 <span className="text-[9px] font-mono text-[#8ea0ad]">
                   DEPTH {Math.round(activeMod.depth * 100)}%
@@ -705,8 +791,8 @@ export default function ModWorkspace({
             </div>
           </div>
 
-          {/* Modulator Parameter Sliders Row: Rate, Depth, Phase, Offset, Smoothing, Sync & Polarity */}
-          <div className="grid grid-cols-6 gap-2 items-center shrink-0">
+          {/* Modulator Parameter Sliders Row: Rate, Int Rate / Steps, Depth, Phase, Offset, Smoothing, Sync & Polarity */}
+          <div className="grid grid-cols-7 gap-1.5 items-center shrink-0">
             {/* RATE or MACRO VALUE */}
             {activeMod.type === 'MACRO' ? (
               <div className="col-span-2 bg-[#151b21] p-1.5 rounded border border-[#242e38]">
@@ -731,55 +817,91 @@ export default function ModWorkspace({
                 />
               </div>
             ) : (
-              <div className="bg-[#151b21] p-1.5 rounded border border-[#242e38]">
-                <div className="flex justify-between text-[9px] text-[#8ea0ad]">
-                  <span>RATE</span>
-                  <span className="font-mono text-white">
-                    {activeMod.tempoSync
-                      ? activeMod.syncRate
-                      : `${activeMod.rate.toFixed(2)}Hz`}
-                  </span>
+              <>
+                {/* Primary RATE (Binary / Tuplet Sync or Free Hz) */}
+                <div className="bg-[#151b21] p-1.5 rounded border border-[#242e38]">
+                  <div className="flex justify-between text-[9px] text-[#8ea0ad]">
+                    <span>RATE</span>
+                    <span className="font-mono text-white">
+                      {activeMod.tempoSync
+                        ? activeMod.syncRate
+                        : `${activeMod.rate.toFixed(2)}Hz`}
+                    </span>
+                  </div>
+                  {activeMod.tempoSync ? (
+                    <select
+                      value={activeMod.syncRate}
+                      onChange={(e) =>
+                        onUpdateModulator(activeMod.id, { syncRate: e.target.value })
+                      }
+                      className="w-full bg-[#090c0f] text-[10px] font-mono text-[#38bdf8] rounded px-1 py-0.5 mt-0.5 border border-[#26313a]"
+                    >
+                      {[
+                        '4/1',
+                        '2/1',
+                        '1/1',
+                        '1/2',
+                        '1/3',
+                        '1/4',
+                        '1/4T',
+                        '1/5',
+                        '1/6',
+                        '1/7',
+                        '1/8',
+                        '1/8D',
+                        '1/9',
+                        '1/12',
+                        '1/16',
+                        '1/32',
+                      ].map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="8.0"
+                      step="0.05"
+                      value={activeMod.rate}
+                      onChange={(e) =>
+                        onUpdateModulator(activeMod.id, {
+                          rate: parseFloat(e.target.value),
+                        })
+                      }
+                      className="w-full h-1.5 bg-[#090c0f] rounded appearance-none accent-[#38bdf8]"
+                    />
+                  )}
                 </div>
-                {activeMod.tempoSync ? (
-                  <select
-                    value={activeMod.syncRate}
-                    onChange={(e) =>
-                      onUpdateModulator(activeMod.id, { syncRate: e.target.value })
-                    }
-                    className="w-full bg-[#090c0f] text-[10px] font-mono text-[#38bdf8] rounded px-1 py-0.5 mt-0.5 border border-[#26313a]"
-                  >
-                    {[
-                      '4/1',
-                      '2/1',
-                      '1/1',
-                      '1/2',
-                      '1/4',
-                      '1/8',
-                      '1/16',
-                      '1/4T',
-                      '1/8D',
-                    ].map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+
+                {/* Second Rate: Integer Rate Subdivision / Multiplier (1, 2, 3, 4, 5, 6, 7, 8..32) */}
+                <div
+                  className="bg-[#151b21] p-1.5 rounded border border-[#242e38]"
+                  title="Second Integer Rate Subdivision (e.g. 3, 5, 6, 7, 8... for non-binary tuplets & polyrhythms)"
+                >
+                  <div className="flex justify-between text-[9px] text-[#8ea0ad]">
+                    <span>INT RATE</span>
+                    <span className="font-mono text-[#38bdf8]">
+                      ×{Math.max(1, Math.round(activeMod.rateDiv || 1))}
+                    </span>
+                  </div>
                   <input
                     type="range"
-                    min="0.05"
-                    max="8.0"
-                    step="0.05"
-                    value={activeMod.rate}
+                    min="1"
+                    max="16"
+                    step="1"
+                    value={Math.max(1, Math.round(activeMod.rateDiv || 1))}
                     onChange={(e) =>
                       onUpdateModulator(activeMod.id, {
-                        rate: parseFloat(e.target.value),
+                        rateDiv: parseInt(e.target.value, 10) || 1,
                       })
                     }
                     className="w-full h-1.5 bg-[#090c0f] rounded appearance-none accent-[#38bdf8]"
                   />
-                )}
-              </div>
+                </div>
+              </>
             )}
 
             {/* DEPTH */}

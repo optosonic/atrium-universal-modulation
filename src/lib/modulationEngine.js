@@ -466,15 +466,22 @@ export const INITIAL_ASSIGNMENTS = [
 
 // Exact musical duration in quarter-note beats for each sync division (4/4 time)
 export const DIVISION_BEATS = {
-  '4/1': 16.0,   // 4 bars (16 beats = 8.0s at 120 BPM)
-  '2/1': 8.0,    // 2 bars (8 beats = 4.0s at 120 BPM)
-  '1/1': 4.0,    // 1 bar (4 beats = 2.0s at 120 BPM)
-  '1/2': 2.0,    // Half note (2 beats = 1.0s at 120 BPM)
-  '1/4': 1.0,    // Quarter note (1 beat = 0.5s at 120 BPM)
-  '1/8': 0.5,    // Eighth note (1/2 beat = 0.25s at 120 BPM)
-  '1/16': 0.25,  // Sixteenth note (1/4 beat = 0.125s at 120 BPM)
-  '1/4T': 2 / 3, // Quarter-note triplet
-  '1/8D': 0.75,  // Dotted eighth note
+  '4/1': 16.0,    // 4 bars (16 beats = 8.0s at 120 BPM)
+  '2/1': 8.0,     // 2 bars (8 beats = 4.0s at 120 BPM)
+  '1/1': 4.0,     // 1 bar (4 beats = 2.0s at 120 BPM)
+  '1/2': 2.0,     // Half note (2 beats = 1.0s at 120 BPM)
+  '1/3': 4 / 3,   // 3 per bar (non-binary triplet bar division)
+  '1/4': 1.0,     // Quarter note (1 beat = 0.5s at 120 BPM)
+  '1/4T': 2 / 3,  // Quarter-note triplet
+  '1/5': 4 / 5,   // 5 per bar (quintuplet)
+  '1/6': 4 / 6,   // 6 per bar (sextuplet)
+  '1/7': 4 / 7,   // 7 per bar (septuplet)
+  '1/8': 0.5,     // Eighth note (1/2 beat = 0.25s at 120 BPM)
+  '1/8D': 0.75,   // Dotted eighth note
+  '1/9': 4 / 9,   // 9 per bar
+  '1/12': 4 / 12, // 12 per bar
+  '1/16': 0.25,   // Sixteenth note (1/4 beat = 0.125s at 120 BPM)
+  '1/32': 0.125,  // Thirty-second note
 };
 
 /**
@@ -510,9 +517,11 @@ export function getStepProgress(mod, t, bpm = 120) {
     mod.steps && mod.steps.length
       ? mod.steps
       : [0.8, 0.2, 0.6, -0.4, 0.9, -0.2, 0.5, -0.7];
+  const intRateDiv = Math.max(1, Math.round(mod.rateDiv || 1));
   const beatsPerSec = (bpm || 120) / 60;
-  const beatsPerStep = DIVISION_BEATS[mod.syncRate] || 1.0;
-  const stepsPerSec = mod.tempoSync ? beatsPerSec / beatsPerStep : mod.rate;
+  const baseBeats = DIVISION_BEATS[mod.syncRate] || 1.0;
+  const beatsPerStep = baseBeats / intRateDiv;
+  const stepsPerSec = mod.tempoSync ? beatsPerSec / beatsPerStep : mod.rate * intRateDiv;
   const phaseSteps = ((mod.phase || 0) / 360) * steps.length;
   const totalStepsElapsed = t * stepsPerSec + phaseSteps;
   const wrappedStepPos = ((totalStepsElapsed % steps.length) + steps.length) % steps.length;
@@ -721,9 +730,10 @@ function evaluateRawWave(mod, cyclePos, t, freq, phaseOffset, bpm) {
 export function evaluateModulator(mod, t, bpm = 120, extraSmoothing = 0) {
   if (!mod || !mod.enabled) return 0;
 
+  const intRateDiv = Math.max(1, Math.round(mod.rateDiv || 1));
   const beatsPerSec = (bpm || 120) / 60;
-  const beatsPerCycle = DIVISION_BEATS[mod.syncRate] || 4.0;
-  const freq = mod.tempoSync ? beatsPerSec / beatsPerCycle : mod.rate;
+  const beatsPerCycle = (DIVISION_BEATS[mod.syncRate] || 4.0) / intRateDiv;
+  const freq = mod.tempoSync ? beatsPerSec / beatsPerCycle : mod.rate * intRateDiv;
   const phaseOffset = (mod.phase || 0) / 360;
 
   const totalSmooth = Math.min(1, (mod.smoothing || 0) * 0.7 + (extraSmoothing || 0) * 0.7);
