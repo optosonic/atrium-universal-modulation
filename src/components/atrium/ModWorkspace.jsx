@@ -184,10 +184,11 @@ export default function ModWorkspace({
     ctx.lineTo(w, h / 2);
     ctx.stroke();
 
+    const padY = 16;
     const mapValToY = (val, polarity) => {
       const scaled = Math.max(-1.2, Math.min(1.2, val * ampZoom));
       const normY = polarity === 'unipolar' ? 1 - scaled : (1 - scaled) * 0.5;
-      return 10 + normY * (h - 20);
+      return padY + normY * (h - padY * 2);
     };
 
     // Draw secondary active modulators faintly in background for multi-mod visual context
@@ -429,111 +430,114 @@ export default function ModWorkspace({
             </div>
           </div>
 
-          {/* Top-Justified Animated Waveform Visualiser (Drag to Zoom + Bottom Resize Handle) */}
-          <div
-            ref={scopeWrapRef}
-            style={{ height: scopeHeight }}
-            onMouseDown={activeMod.type !== 'STEP' ? handleScopeMouseDown : undefined}
-            onWheel={handleScopeWheel}
-            onDoubleClick={() => {
-              setTimeZoom(1.0);
-              setAmpZoom(1.0);
-            }}
-            className="relative shrink-0 rounded border border-[#26313a] bg-[#070a0d] overflow-hidden cursor-ns-resize group"
-            title="Drag up/down or left/right to zoom waveform • Shift+drag for vertical gain • Double-click to reset zoom"
-          >
-            <canvas
-              ref={canvasRef}
-              width={canvasSize.width}
-              height={canvasSize.height}
-              className="w-full h-full block"
-            />
-
-            {/* Interactive Step Sequencer Bars when type === 'STEP' */}
-            {activeMod.type === 'STEP' && (
-              <div className="absolute inset-0 flex items-end gap-1 p-2 pb-3 bg-black/40">
-                {activeMod.steps.map((val, idx) => (
-                  <div
-                    key={idx}
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const clickNorm = 1 - (e.clientY - rect.top) / rect.height;
-                      const mapped = Math.max(-1, Math.min(1, clickNorm * 2 - 1));
-                      const nextSteps = [...activeMod.steps];
-                      nextSteps[idx] = mapped;
-                      onUpdateModulator(activeMod.id, { steps: nextSteps });
-                    }}
-                    className="flex-1 h-full bg-[#12181f]/70 border border-[#2c3844] rounded-sm relative cursor-ns-resize flex items-end overflow-hidden"
-                    title={`Step ${idx + 1}: Click to set level`}
-                  >
-                    <div
-                      style={{
-                        height: `${((val + 1) / 2) * 100}%`,
-                        backgroundColor: `${activeMod.color}88`,
-                      }}
-                      className="w-full border-t-2 border-white"
-                    />
-                  </div>
-                ))}
+          {/* Top-Justified Animated Waveform Visualiser (Dedicated HUD Bar + Unobstructed Scope) */}
+          <div className="shrink-0 rounded border border-[#26313a] bg-[#070a0d] overflow-hidden flex flex-col">
+            {/* Dedicated Scope Header Bar — never overlaps waveform peaks or troughs */}
+            <div className="h-6 px-2 bg-[#0c1116] border-b border-[#1c262e] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-mono text-[#8ea0ad]">
+                  {activeMod.tempoSync
+                    ? `SYNC ${activeMod.syncRate} (${bpm} BPM)`
+                    : `FREE ${activeMod.rate.toFixed(2)} Hz`}
+                </span>
+                <span className="text-[#2c3a46]">·</span>
+                <span className="text-[9px] font-mono text-[#8ea0ad]">
+                  DEPTH {Math.round(activeMod.depth * 100)}%
+                </span>
               </div>
-            )}
 
-            {/* Top-left HUD Overlay */}
-            <div className="absolute top-1.5 left-2 flex items-center gap-2 pointer-events-none">
-              <span className="text-[9px] font-mono text-[#8ea0ad] bg-black/60 px-1.5 py-0.5 rounded">
-                {activeMod.tempoSync
-                  ? `SYNC ${activeMod.syncRate} (${bpm} BPM)`
-                  : `FREE ${activeMod.rate.toFixed(2)} Hz`}
-              </span>
-              <span className="text-[9px] font-mono text-[#8ea0ad] bg-black/60 px-1.5 py-0.5 rounded">
-                DEPTH {Math.round(activeMod.depth * 100)}%
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[8px] font-mono text-[#6c7d8c] mr-0.5">
+                  DRAG WAVE TO ZOOM
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTimeZoom((z) => Math.max(0.25, +(z / 1.25).toFixed(2)))}
+                  className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
+                  title="Zoom Out"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTimeZoom(1.0);
+                    setAmpZoom(1.0);
+                  }}
+                  className="px-1 text-[9px] font-mono text-[#38bdf8] hover:underline"
+                  title="Click to reset zoom (1.0x)"
+                >
+                  {timeZoom.toFixed(2)}x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeZoom((z) => Math.min(8.0, +(z * 1.25).toFixed(2)))}
+                  className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
+                  title="Zoom In"
+                >
+                  +
+                </button>
+              </div>
             </div>
 
-            {/* Top-right Interactive Zoom Controls & Readout */}
+            {/* Pure Waveform Canvas Area */}
             <div
-              onMouseDown={(e) => e.stopPropagation()}
-              className="absolute top-1.5 right-2 flex items-center gap-1 bg-black/70 border border-[#26313a] rounded px-1.5 py-0.5"
+              ref={scopeWrapRef}
+              style={{ height: scopeHeight }}
+              onMouseDown={activeMod.type !== 'STEP' ? handleScopeMouseDown : undefined}
+              onWheel={handleScopeWheel}
+              onDoubleClick={() => {
+                setTimeZoom(1.0);
+                setAmpZoom(1.0);
+              }}
+              className="relative w-full cursor-ns-resize group"
+              title="Drag up/down or left/right to zoom waveform • Shift+drag for vertical gain • Double-click to reset zoom"
             >
-              <span className="text-[8px] font-mono text-[#6c7d8c] mr-0.5">
-                DRAG ZOOM
-              </span>
-              <button
-                type="button"
-                onClick={() => setTimeZoom((z) => Math.max(0.25, +(z / 1.25).toFixed(2)))}
-                className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
-                title="Zoom Out"
-              >
-                −
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTimeZoom(1.0);
-                  setAmpZoom(1.0);
-                }}
-                className="px-1 text-[9px] font-mono text-[#38bdf8] hover:underline"
-                title="Click to reset zoom (1.0x)"
-              >
-                {timeZoom.toFixed(2)}x
-              </button>
-              <button
-                type="button"
-                onClick={() => setTimeZoom((z) => Math.min(8.0, +(z * 1.25).toFixed(2)))}
-                className="px-1 text-[9px] font-mono text-[#9fb1bd] hover:text-white"
-                title="Zoom In"
-              >
-                +
-              </button>
+              <canvas
+                ref={canvasRef}
+                width={canvasSize.width}
+                height={canvasSize.height}
+                className="w-full h-full block"
+              />
+
+              {/* Interactive Step Sequencer Bars when type === 'STEP' */}
+              {activeMod.type === 'STEP' && (
+                <div className="absolute inset-0 flex items-end gap-1 p-2 pb-3 bg-black/40">
+                  {activeMod.steps.map((val, idx) => (
+                    <div
+                      key={idx}
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const clickNorm = 1 - (e.clientY - rect.top) / rect.height;
+                        const mapped = Math.max(-1, Math.min(1, clickNorm * 2 - 1));
+                        const nextSteps = [...activeMod.steps];
+                        nextSteps[idx] = mapped;
+                        onUpdateModulator(activeMod.id, { steps: nextSteps });
+                      }}
+                      className="flex-1 h-full bg-[#12181f]/70 border border-[#2c3844] rounded-sm relative cursor-ns-resize flex items-end overflow-hidden"
+                      title={`Step ${idx + 1}: Click to set level`}
+                    >
+                      <div
+                        style={{
+                          height: `${((val + 1) / 2) * 100}%`,
+                          backgroundColor: `${activeMod.color}88`,
+                        }}
+                        className="w-full border-t-2 border-white"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
             </div>
 
-            {/* Bottom Drag Handle to resize waveform height */}
+            {/* Dedicated Bottom Drag Handle outside the canvas so troughs are never covered */}
             <div
               onMouseDown={handleResizeMouseDown}
-              className="absolute inset-x-0 bottom-0 h-2.5 bg-gradient-to-t from-black/80 to-transparent hover:from-[#38bdf8]/30 cursor-row-resize flex items-center justify-center"
+              className="h-2.5 bg-[#0c1116] border-t border-[#1c262e] hover:bg-[#16222c] cursor-row-resize flex items-center justify-center shrink-0"
               title="Drag to resize waveform height"
             >
-              <span className="w-8 h-[2px] rounded-full bg-[#3a4956] group-hover:bg-[#38bdf8]" />
+              <span className="w-8 h-[2px] rounded-full bg-[#3a4956]" />
             </div>
           </div>
 
