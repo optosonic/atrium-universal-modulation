@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   INITIAL_PARAMETERS,
   INITIAL_MODULATORS,
@@ -8,24 +8,16 @@ import {
   computeParameterLiveState,
 } from '@/lib/modulationEngine';
 
-/**
- * CLEAN PARAMETER BINDING SURFACE — the only API Atrium needs to consume.
- *
- * This hook owns the entire universal modulation engine so any UI (knob, slider,
- * fader, XY pad, 3D control) binds to modulation with three props and nothing else:
- *
- *   liveState = liveStates[paramId]           // animated value, ranges and contributions
- *   onChangeBase(paramId, value)              // user edits the base value
- *   onDropModulator(modulatorId, paramId)     // a modulator was dropped on the control
- *
- * Everything else (modulator CRUD, routing, transport clock) is exposed below.
- */
-export default function useModulationEngine() {
+const ModulationEngineContext = createContext(null);
+
+function useCreateModulationEngine() {
   const [parameters, setParameters] = useState(INITIAL_PARAMETERS);
   const [modulators, setModulators] = useState(INITIAL_MODULATORS);
   const [assignments, setAssignments] = useState(INITIAL_ASSIGNMENTS);
 
   const [selectedModId, setSelectedModId] = useState(INITIAL_MODULATORS[0].id);
+  const [selectedTargetParamId, setSelectedTargetParamId] = useState('cs_width');
+  const [autoMode, setAutoMode] = useState('MOD');
 
   // Transport / clock
   const [isPlaying, setIsPlaying] = useState(true);
@@ -33,11 +25,15 @@ export default function useModulationEngine() {
   const [simTime, setSimTime] = useState(0);
   const [automationEnabled, setAutomationEnabled] = useState(true);
 
-  // Assignment popup (MIDI | OSC | MOD)
+  // Assignment popup (MIDI | OSC | MOD) & Learn highlight mode
+  const [learnModeActive, setLearnModeActive] = useState(false);
   const [activeLearnParamId, setActiveLearnParamId] = useState(null);
 
-  // Single rAF clock drives every modulation calculation (works while paused too,
-  // so a paused engine still shows the frozen modulator output).
+  // Drag-and-drop & visual confirmation state
+  const [draggingModId, setDraggingModId] = useState(null);
+  const [lastAssignedNotice, setLastAssignedNotice] = useState(null); // { paramId, modId, modName, paramName, color, ts }
+
+  // Single rAF clock drives every modulation calculation across both standalone & Atrium views
   const lastFrameRef = useRef(performance.now());
   useEffect(() => {
     let rafId;
@@ -51,6 +47,17 @@ export default function useModulationEngine() {
     return () => cancelAnimationFrame(rafId);
   }, [isPlaying]);
 
+  // Clear global drag state if drag ends anywhere in the window
+  useEffect(() => {
+    const handleGlobalDragEnd = () => setDraggingModId(null);
+    window.addEventListener('dragend', handleGlobalDragEnd);
+    window.addEventListener('drop', handleGlobalDragEnd);
+    return () => {
+      window.removeEventListener('dragend', handleGlobalDragEnd);
+      window.removeEventListener('drop', handleGlobalDragEnd);
+    };
+  }, []);
+
   const modulatorsMap = useMemo(() => {
     const map = {};
     modulators.forEach((m) => {
@@ -58,6 +65,8 @@ export default function useModulationEngine() {
     });
     return map;
   }, [modulators]);
+
+  const draggingModulator = draggingModId ? modulatorsMap[draggingModId] || null : null;
 
   const liveStates = useMemo(() => {
     const states = {};
@@ -75,6 +84,7 @@ export default function useModulationEngine() {
   }, [parameters, assignments, modulatorsMap, simTime, bpm, automationEnabled]);
 
   const changeBase = (paramId, newVal) => {
+    setSelectedTargetParamId(paramId);
     setParameters((prev) => ({
       ...prev,
       [paramId]: { ...prev[paramId], baseValue: newVal },
@@ -94,12 +104,12 @@ export default function useModulationEngine() {
       subtype: meta.defaultSubtype,
       rate: type === 'STEP' ? 2.0 : 1.1,
       syncRate: '1/4',
-      tempoSync: false,
+      tempoSync: type === 'STEP',
       depth: 1.0,
       phase: 0,
       offset: 0,
-      smoothing: type === 'RANDOM' ? 0.45 : 0.1,
-      polarity: 'bipolar',
+      smoothing: type === 'RANDOM' ? 0.45 : type === 'STEP' ? 0.0 : 0.1,
+      polarity: type === 'STEP' ? 'unipolar' : 'bipolar',
       enabled: true,
       color,
       steps: [0.85, 0.3, -0.4, 0.7, -0.6, 0.9, -0.2, 0.5],
@@ -110,7 +120,7 @@ export default function useModulationEngine() {
 
     setModulators((prev) => [...prev, newMod]);
     setSelectedModId(newId);
-    return newId;
+    return newMod;
   };
 
   const updateModulator = (modId, patch) => {
@@ -126,16 +136,46 @@ export default function useModulationEngine() {
     }
   };
 
-  const addAssignment = (modulatorId, parameterId) => {
+  const triggerConfirmation = (modObj, paramObj, isExisting = false) => {
+    if (!modObj || !paramObj) return;
+    const notice = {
+      paramId: paramObj.id,
+      modId: modObj.id,
+      modName: modObj.name,
+      paramName: `${paramObj.group} / ${paramObj.name}`,
+      color: modObj.color,
+      isExisting,
+      ts: Date.now(),
+    };
+    setLastAssignedNotice(notice);
+    setTimeout(() => {
+      setLastAssignedNotice((cur) => (cur?.ts === notice.ts ? null : cur));
+    }, 1800);
+  };
+
+  const addAssignment = (modulatorId, parameterId, modOverride = null) => {
     const param = parameters[parameterId];
+    const modObj = modOverride || modulatorsMap[modulatorId];
     if (!param || !modulatorId) return;
+
+    setSelectedTargetParamId(parameterId);
+    setDraggingModId(null);
+
     const existing = assignments.find(
       (a) => a.modulatorId === modulatorId && a.parameterId === parameterId
     );
     if (existing) {
+      // Enable it if it was disabled and focus it without creating a duplicate
+      if (!existing.enabled) {
+        setAssignments((prev) =>
+          prev.map((a) => (a.id === existing.id ? { ...a, enabled: true } : a))
+        );
+      }
       setSelectedModId(modulatorId);
-      return;
+      triggerConfirmation(modObj, param, true);
+      return existing.id;
     }
+
     const newAsgn = {
       id: `asgn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       modulatorId,
@@ -143,7 +183,7 @@ export default function useModulationEngine() {
       depth: 0.55,
       min: param.min,
       max: param.max,
-      polarity: 'bipolar',
+      polarity: modObj?.polarity === 'unipolar' ? 'unipolar' : 'bipolar',
       offset: 0,
       invert: false,
       smoothing: 0.1,
@@ -151,11 +191,14 @@ export default function useModulationEngine() {
     };
     setAssignments((prev) => [...prev, newAsgn]);
     setSelectedModId(modulatorId);
+    triggerConfirmation(modObj, param, false);
+    return newAsgn.id;
   };
 
   const createModulatorAndAssign = (type, parameterId) => {
-    const newModId = createModulator(type);
-    addAssignment(newModId, parameterId);
+    const newMod = createModulator(type);
+    addAssignment(newMod.id, parameterId, newMod);
+    return newMod.id;
   };
 
   const updateAssignment = (asgnId, patch) => {
@@ -166,7 +209,10 @@ export default function useModulationEngine() {
     setAssignments((prev) => prev.filter((a) => a.id !== asgnId));
   };
 
-  const openLearnPopup = (paramId) => setActiveLearnParamId(paramId);
+  const openLearnPopup = (paramId) => {
+    setSelectedTargetParamId(paramId);
+    setActiveLearnParamId(paramId);
+  };
   const closeLearnPopup = () => setActiveLearnParamId(null);
 
   const resetEngine = () => {
@@ -184,11 +230,21 @@ export default function useModulationEngine() {
     modulatorsMap,
     liveStates,
     selectedModId,
+    selectedTargetParamId,
+    setSelectedTargetParamId,
+    autoMode,
+    setAutoMode,
     isPlaying,
     bpm,
     simTime,
     automationEnabled,
+    learnModeActive,
+    setLearnModeActive,
     activeLearnParamId,
+    draggingModId,
+    draggingModulator,
+    setDraggingModId,
+    lastAssignedNotice,
     // binding API
     changeBase,
     addAssignment,
@@ -198,7 +254,7 @@ export default function useModulationEngine() {
     closeLearnPopup,
     // modulators
     selectMod: setSelectedModId,
-    createModulator,
+    createModulator: (type) => createModulator(type).id,
     updateModulator,
     deleteModulator,
     createModulatorAndAssign,
@@ -209,4 +265,21 @@ export default function useModulationEngine() {
     setAutomationEnabled,
     resetEngine,
   };
+}
+
+export function ModulationEngineProvider({ children }) {
+  const engine = useCreateModulationEngine();
+  return (
+    <ModulationEngineContext.Provider value={engine}>
+      {children}
+    </ModulationEngineContext.Provider>
+  );
+}
+
+export default function useModulationEngine() {
+  const ctx = useContext(ModulationEngineContext);
+  if (!ctx) {
+    throw new Error('useModulationEngine must be used within ModulationEngineProvider');
+  }
+  return ctx;
 }
