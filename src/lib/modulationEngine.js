@@ -37,7 +37,7 @@ export const MODULATOR_TYPES = [
     type: 'STEP',
     label: 'STEP',
     shortDesc: 'Rhythmic Step Sequencer',
-    subtypes: ['8-step', '16-step', 'euclidean'],
+    subtypes: ['8-step', '16-step', '32-step', 'euclidean'],
     defaultSubtype: '8-step',
   },
   {

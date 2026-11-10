@@ -129,7 +129,9 @@ export default function StepSequencerOverlay({
       onMouseMove={handleMouseMoveHover}
       onMouseLeave={() => !isDragging && setHoverStepIdx(null)}
       onDoubleClick={handleDoubleClick}
-      className="absolute inset-0 flex items-stretch gap-1 px-2 py-2 bg-[#070a0d] select-none cursor-crosshair"
+      className={`absolute inset-0 flex items-stretch ${
+        steps.length > 16 ? 'gap-[2px]' : 'gap-1'
+      } px-2 py-2 bg-[#070a0d] select-none cursor-crosshair`}
       title="Click and drag across bars to draw steps • Alt+drag or double-click to zero"
     >
       {steps.map((val, idx) => {
@@ -197,7 +199,9 @@ export default function StepSequencerOverlay({
 
             {/* Step Number at bottom */}
             <span
-              className={`absolute bottom-1 inset-x-0 text-center text-[8px] font-mono ${
+              className={`absolute bottom-1 inset-x-0 text-center ${
+                steps.length > 16 ? 'text-[7px]' : 'text-[8px]'
+              } font-mono ${
                 isCurrentPlayStep ? 'text-white font-bold' : 'text-[#6c7d8c]'
               }`}
             >

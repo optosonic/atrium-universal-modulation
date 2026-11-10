@@ -484,12 +484,18 @@ export default function ModWorkspace({
                     const patch = { subtype: st };
                     if (activeMod.type === 'STEP') {
                       const cur = activeMod.steps || [];
-                      if (st === '16-step' && cur.length !== 16) {
+                      if (st === '32-step' && cur.length !== 32) {
+                        patch.steps = Array.from({ length: 32 }, (_, i) =>
+                          cur[i % (cur.length || 1)] ?? 0
+                        );
+                      } else if (st === '16-step' && cur.length !== 16) {
                         patch.steps = Array.from({ length: 16 }, (_, i) =>
-                          cur[i % cur.length] ?? 0
+                          cur[i % (cur.length || 1)] ?? 0
                         );
                       } else if (st === '8-step' && cur.length !== 8) {
-                        patch.steps = cur.slice(0, 8);
+                        patch.steps = Array.from({ length: 8 }, (_, i) =>
+                          cur[i % (cur.length || 1)] ?? 0
+                        );
                       } else if (st === 'euclidean') {
                         const len = cur.length || 8;
                         patch.steps = Array.from({ length: len }, (_, i) =>
