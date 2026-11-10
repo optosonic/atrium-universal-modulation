@@ -1,97 +1,148 @@
-export const CURSOR_HANDOFF_SPEC = `ATRIUM — UNIVERSAL MODULATION MODULE · INTEGRATION SPEC FOR CURSOR
+export const CURSOR_HANDOFF_SPEC = `# ATRIUM — UNIVERSAL MODULATION SYSTEM · IMPLEMENTATION PROMPT FOR MAIN SOFTWARE
 
-GOAL
-Port the working Universal Modulation prototype into the existing Atrium app so any
-parameter anywhere (plugin, mixer, spatial engine, particle system) can be modulated.
-Do not redesign Atrium, do not add a new plugin, do not change existing DAW styling.
+## 1. Objective & Non-Negotiable Constraints
+Integrate the Universal Modulation System into the existing Atrium application so **any parameter anywhere** (Channel Strip, multi-band EQ, Compressor, Reverb, Synth Instrument, 3D Orbit Stage, HydroSwarm Particles, Mixer Vol/Pan) can be modulated in real time by multiple modulation sources.
 
-FILES TO PORT (all framework-free except the React views)
-1. src/lib/modulationEngine.js          — pure DSP/math engine + parameter & modulator definitions
-2. src/hooks/useModulationEngine.js     — React binding layer (state, clock, assignment CRUD)
-3. src/components/atrium/AtriumKnob.jsx — modulated knob with mod arc, live dot, drop target
-4. src/components/atrium/ModWorkspace.jsx        — AUTO > MOD workspace (library / editor / routing)
-5. src/components/atrium/ParameterLearnPopup.jsx — extended MIDI | OSC | MOD learn popup
+**Strict Architectural & Visual Constraints:**
+- **Do NOT redesign Atrium** or replace existing plugin/mixer layouts.
+- **Integrate inside existing Atrium surfaces only:**
+  1. Add \`MOD\` to the existing \`AUTO\` tab mode selector (\`VOL | PAN | GESTURE | MOD\`).
+  2. Extend the existing parameter learn popup (\`LEARN <ParamName>\`) to include \`MIDI | OSC | MOD\` tabs.
+  3. Add a non-invasive SVG modulation ring/arc and live indicator dot around existing knobs/sliders without altering knob geometry.
+- **Coexistence Formula (Base + Automation + Modulation):**
+  \`finalValue = clamp(baseValue + automationDelta + sum(assignmentDelta_i), min, max)\`
+  Base parameter edits, timeline automation lanes (\`VOL\`, \`PAN\`, \`GESTURE\`), and live modulation must coexist simultaneously and non-destructively.
 
-DATA CONTRACTS
-Parameter:
-  { id, name, shortName, group, plugin, min, max, step, baseValue, unit,
-    displayFormat(v), hasAutomation, midiCC, oscAddress }
-Modulator:
-  { id, name, type, subtype, rate, syncRate, tempoSync, depth, phase, offset,
-    smoothing, polarity: 'bipolar' | 'unipolar', enabled, color,
-    steps[], curvePoints[], macroValue, adsr: {a,d,s,r} }
-Assignment (one modulator -> one parameter):
-  { id, modulatorId, parameterId, depth (-1..1), min, max,
-    polarity, offset, invert, smoothing, enabled }
+---
 
-ENGINE API (src/lib/modulationEngine.js)
-  evaluateModulator(mod, t, bpm) -> number
-    Output normalised to -1..1 (bipolar) or 0..1 (unipolar). Applies mod.depth,
-    mod.offset and tempo sync. Pure function: feed it any t, no side effects.
-  computeParameterLiveState(param, assignmentsForEngine, modulatorsMap, t, bpm, automationOn)
-    -> { baseValue, automatedValue, modulatedValue, normBase, normAuto, normLive,
-         contributions: [{ assignment, modulator, signal, paramDelta, color }] }
-    Sums every enabled assignment, clamps to the assignment min/max when a single
-    route exists, otherwise to the parameter range. This is the ONLY place where
-    base + automation + modulation are combined.
+## 2. Files & Modules to Port / Integrate
+1. \`src/lib/modulationEngine.js\` — Pure DSP/math evaluation engine, \`DIVISION_BEATS\` tempo-sync table, \`getStepProgress()\`, \`evaluateModulator()\`, and \`computeParameterLiveState()\`.
+2. \`src/hooks/useModulationEngine.js\` — Centralized React state & 60fps \`requestAnimationFrame\` transport clock hook exposing the 3-prop control binding surface.
+3. \`src/components/atrium/ModWorkspace.jsx\` — 3-column \`AUTO > MOD\` workspace (Modulator Library & Active Stack | Top-Justified Interactive Oscilloscope & Parameter Controls | Universal Routing Matrix).
+4. \`src/components/atrium/StepSequencerOverlay.jsx\` — Multi-bar click-and-drag step painter with fast-sweep interpolation, \`RND\` / \`INV\` / \`CLR\` tools, and live active-step highlight.
+5. \`src/components/atrium/ParameterLearnPopup.jsx\` — Extended \`MIDI | OSC | MOD\` inspector popover for per-parameter modulation assignments.
+6. \`src/components/atrium/AtriumKnob.jsx\` — Reference rotary control implementation showing base value needle, automation ghost marker, live modulated excursion arc, and HTML5 drag-and-drop target handling.
 
-SUPPORTED MODULATOR TYPES (all implemented)
-  LFO      : sine, triangle, saw, square, pulse, custom
-  RANDOM   : smooth, stepped, sample & hold
-  ENVELOPE : looping ADSR
-  STEP     : editable multi-step sequencer (click bars to set level)
-  FOLLOWER : audio-reactive envelope (simulated transient stream; swap in a real
-             AnalyserNode RMS feed at the same evaluate signature)
-  CURVE    : drawable breakpoint wave (curvePoints array)
-  MACRO    : one dial driving many destinations
-  FUNCTION : mathematical shapes (sin(x)*cos(2x), chaos-logistic, harmonic-fold)
+---
 
-BINDING A CONTROL — three props, nothing else
-  const st = liveStates[param.id];
-  <AtriumKnob
-    param={param}
-    liveState={st}                              // animated value + contributions
-    onChangeBase={changeBase}                    // (paramId, value)
-    onOpenLearnPopup={openLearnPopup}            // (paramId) -> MIDI | OSC | MOD popup
-    onDropModulator={addAssignment}              // (modulatorId, paramId)
-    learnModeActive={learnModeActive}
-  />
-For sliders/faders/XY pads/3D controls reuse the same contract:
-  value      = st.modulatedValue
-  indicator  = st.normLive ; base ghost = st.normBase ; auto ghost = st.normAuto
-  ring color = st.contributions[0]?.color
+## 3. Data Contracts
 
-DRAG & DROP PROTOCOL
-  Drag source:  e.dataTransfer.setData('application/atrium-modulator', mod.id)
-  Drop target:  onDragOver -> if types includes that MIME, e.preventDefault()
-                onDrop     -> addAssignment(getData(...), param.id)
-  Any DOM element can become a target; no library required.
+### Parameter Definition
+\`\`\`ts
+interface AtriumParameter {
+  id: string;                 // Unique ID, e.g. 'cs_eq_lf_freq', 'cs_width', 'orbit_rotation'
+  name: string;               // Disambiguated display name, e.g. 'LF Freq (80Hz)', 'Width'
+  shortName: string;          // Compact knob label, e.g. 'LF FREQ', 'WIDTH'
+  group: string;              // Module group, e.g. 'EQ Low', 'Channel Strip', 'Orbit'
+  plugin: string;             // Host plugin name, e.g. 'Channel Strip Mk II'
+  min: number;
+  max: number;
+  step: number;
+  baseValue: number;
+  unit: string;               // 'Hz' | 'dB' | '%' | 's' | '°' | ''
+  displayFormat: (v: number) => string;
+  hasAutomation: boolean;
+  midiCC: number | null;
+  oscAddress: string;
+}
+\`\`\`
+> **Important:** Multi-band / multi-stage plugins (such as 4-band EQs) MUST register distinct parameter IDs and disambiguated names per band (\`EQ Low / LF Gain\`, \`EQ LMF / LMF Gain\`, \`EQ HMF / HMF Gain\`, \`EQ High / HF Gain\`) rather than generic duplicate labels.
 
-ROUTING RULES
-  One modulator -> many parameters. Many modulators -> one parameter.
-  Assignment ids are independent: editing or deleting one never touches another.
-  Deleting a modulator removes only its own assignments.
+### Modulator Source State
+\`\`\`ts
+interface Modulator {
+  id: string;
+  name: string;               // e.g. 'LFO 1', 'RANDOM 1', 'STEP 1'
+  type: 'LFO' | 'RANDOM' | 'ENVELOPE' | 'STEP' | 'FOLLOWER' | 'CURVE' | 'MACRO' | 'FUNCTION';
+  subtype: string;            // e.g. 'sine'|'triangle'|'saw'|'square'|'pulse'|'custom', '8-step'|'16-step'|'euclidean', etc.
+  rate: number;               // Free rate in Hz (for STEP: steps per second)
+  syncRate: '4/1' | '2/1' | '1/1' | '1/2' | '1/4' | '1/8' | '1/16' | '1/4T' | '1/8D';
+  tempoSync: boolean;
+  depth: number;              // 0..1 master modulator output scale
+  phase: number;              // 0..360 degrees
+  offset: number;             // -0.5..0.5 DC offset
+  smoothing: number;          // 0..1 slew / step glide
+  polarity: 'bipolar' | 'unipolar';
+  enabled: boolean;
+  color: string;              // Hex color token used for arcs, badges, and matrix borders
+  steps: number[];            // Normalized step values in [-1, 1]
+  curvePoints: number[];      // Normalized breakpoint values in [-1, 1]
+  macroValue: number;         // 0..1 master dial for MACRO type
+  adsr: { a: number; d: number; s: number; r: number };
+}
+\`\`\`
 
-CLOCK
-  Single requestAnimationFrame loop increments simTime while playing and is paused
-  by the transport. All modulation is derived from simTime, so play/pause/reset are
-  exact and tempo changes never desync modulators. Tempo-synced modulators use
-  syncRate ('1/1','1/2','1/4','1/8','1/16','1/4T','1/8D') scaled by bpm.
+### Modulation Assignment (Many-to-Many Routing)
+\`\`\`ts
+interfaceModulationAssignment {
+  id: string;
+  modulatorId: string;
+  parameterId: string;
+  depth: number;              // -1..1 per-target bipolar depth
+  min: number;                // Target clamp floor in parameter units
+  max: number;                // Target clamp ceiling in parameter units
+  polarity: 'bipolar' | 'unipolar';
+  offset: number;             // -0.5..0.5 per-assignment offset
+  invert: boolean;            // Phase inversion toggle
+  smoothing: number;          // 0..1 per-assignment smoothing
+  enabled: boolean;
+}
+\`\`\`
 
-VISUAL CONSTRAINTS (non-negotiable)
-  Backgrounds #121619 / #0e1216 / #161b20, borders #27313a, cyan #38bdf8 / #5bc0de,
-  metallic plates via .atrium-plate-light, buttons via .atrium-btn-metal / .atrium-btn-cyan.
-  Typography 8–12px, tracking 0.14–0.18em for labels, monospace for numbers.
-  Never restyle the knob body: modulation is expressed as an outer arc, a live dot
-  and a top-right badge only.
+---
 
-ACCEPTANCE CHECKLIST
-  1. AUTO tab shows VOL | PAN | GESTURE | MOD; switching modes keeps all wiring.
-  2. Create LFO -> choose waveform -> change rate; waveform preview responds instantly.
-  3. Drag LFO onto Width knob -> value moves continuously; knob shows base ghost + arc.
-  4. Same LFO to EQ Frequency with a different depth -> independent depths preserved.
-  5. New RANDOM assigned to Reverb Decay -> visibly random motion.
-  6. Routing list: edit depth, invert, enable/disable and delete single routes.
-  7. Right-click / learn badge on any control opens LEARN popup with MIDI | OSC | MOD.
-  8. Play / pause / reset stop and restore modulation without losing configuration.
+## 4. Exact Tempo-Sync & Signal Evaluation Math (\`modulationEngine.js\`)
+
+Use exact quarter-note beat durations (\`DIVISION_BEATS\`) so tempo sync at any \`bpm\` is musically accurate:
+\`\`\`js
+export const DIVISION_BEATS = {
+  '4/1': 16.0,   // 4 bars (16 beats = 8.0s at 120 BPM)
+  '2/1': 8.0,    // 2 bars (8 beats = 4.0s at 120 BPM)
+  '1/1': 4.0,    // 1 bar  (4 beats = 2.0s at 120 BPM)
+  '1/2': 2.0,    // Half note (2 beats = 1.0s at 120 BPM)
+  '1/4': 1.0,    // Quarter note (1 beat = 0.5s at 120 BPM)
+  '1/8': 0.5,    // Eighth note (1/2 beat = 0.25s at 120 BPM)
+  '1/16': 0.25,  // Sixteenth note (1/4 beat = 0.125s at 120 BPM)
+  '1/4T': 2 / 3, // Quarter-note triplet
+  '1/8D': 0.75,  // Dotted eighth note
+};
+\`\`\`
+- **For Continuous Generators (\`LFO\`, \`ENVELOPE\`, \`CURVE\`, \`RANDOM\`, \`FUNCTION\`):**
+  \`beatsPerSec = bpm / 60\`
+  \`freq = mod.tempoSync ? beatsPerSec / DIVISION_BEATS[mod.syncRate] : mod.rate\`
+  Do **not** multiply \`RANDOM\` or \`LFO\` frequencies by arbitrary extra scalars.
+- **For Step Sequencers (\`STEP\`):**
+  In \`tempoSync\` mode, \`syncRate\` defines the **per-step note division** (e.g. \`1/4\` = 1 beat per step = 2 steps/sec at 120 BPM; \`1/8\` = 0.5 beats per step = 4 steps/sec at 120 BPM). In free mode, \`mod.rate\` is steps per second. Use \`getStepProgress(mod, t, bpm)\` for both audio/control evaluation and the UI step highlight so they never drift.
+
+---
+
+## 5. UI & Interaction Requirements
+
+1. **Control Binding Surface (3 Props on Any Atrium Control):**
+   Every modulatable control receives:
+   - \`liveState = liveStates[param.id]\` (\`{ baseValue, automatedValue, modulatedValue, normBase, normAuto, normLive, contributions }\`)
+   - \`onChangeBase(param.id, newValue)\`
+   - \`onDropModulator(modulatorId, param.id)\`
+   - Plus \`onOpenLearnPopup(param.id, anchorRect)\` on right-click or clicking the top-right badge.
+2. **Drag-and-Drop Patching Protocol:**
+   - Modulator pills and the editor's \`DRAG TO TARGET\` handle set \`e.dataTransfer.setData('application/atrium-modulator', mod.id)\`.
+   - Any knob, slider, or fader accepts drops with that MIME type and calls \`addAssignment(modulatorId, param.id)\`.
+3. **Top-Justified Oscilloscope & Step Sequencer (\`ModWorkspace.jsx\`):**
+   - Keep the unit/rate/depth readout and zoom controls (\`−\`, \`1.00x\`, \`+\`) in a **dedicated header bar above the canvas** and the vertical resize handle **below the canvas** so waveform peaks and troughs are never covered.
+   - Support drag-on-wave to zoom time/amplitude and double-click to reset zoom.
+   - When \`activeMod.type === 'STEP'\`, suppress the scrolling LFO waveform canvas and render \`<StepSequencerOverlay />\` directly so there is no distracting background wave behind the step bars.
+   - \`<StepSequencerOverlay />\` must update immediately on \`mousedown\` and allow continuous horizontal + vertical drag-painting across all bars with linear interpolation between fast mouse samples.
+4. **Extended \`MIDI | OSC | MOD\` Learn Popup (\`ParameterLearnPopup.jsx\`):**
+   - Preserves existing \`MIDI\` CC learn and \`OSC\` address editing.
+   - Adds the \`MOD\` tab showing live Base vs. Modulated value meter, quick \`+ Assign Modulator\` buttons, and per-assignment cards (Depth slider, Min/Max range sliders, Offset, Smoothing, Bipolar/Unipolar toggle, Invert toggle, Enable checkbox, and Delete button).
+
+---
+
+## 6. Verification & Acceptance Checklist
+- [ ] Switching \`AUTO\` between \`VOL\`, \`PAN\`, \`GESTURE\`, and \`MOD\` preserves all modulators and active assignments.
+- [ ] Dragging any modulator chip onto a Channel Strip, EQ, Reverb, Synth, Orbit, or Mixer knob immediately creates a route and renders the colored modulation arc.
+- [ ] Assigning one modulator to multiple parameters allows independent depth, polarity, and min/max bounds per parameter.
+- [ ] Assigning multiple modulators to a single parameter sums their contributions cleanly on top of base value + timeline automation.
+- [ ] \`STEP\` modulator advances at exact beat divisions (e.g. \`1/4\` at 120 BPM = 2 steps/sec) with no background waveform clutter, and supports single-gesture multi-bar drag painting.
+- [ ] Transport Play, Pause, Reset (\`RTZ\`), and \`BPM\` changes immediately govern all free and tempo-synced modulators.
 `;
