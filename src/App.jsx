@@ -8,6 +8,7 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import AtriumPrototype from './pages/AtriumPrototype';
 import UniversalModulatorStandalone from './pages/UniversalModulatorStandalone';
+import { ModulationEngineProvider } from '@/hooks/useModulationEngine';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -35,8 +36,9 @@ const AuthenticatedApp = () => {
   // Render the main app
   return (
     <Routes>
-      <Route path="/" element={<AtriumPrototype />} />
+      <Route path="/" element={<UniversalModulatorStandalone />} />
       <Route path="/universal-modulator" element={<UniversalModulatorStandalone />} />
+      <Route path="/atrium" element={<AtriumPrototype />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
@@ -48,11 +50,13 @@ function App() {
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <ScrollToTop />
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
+        <ModulationEngineProvider>
+          <Router>
+            <ScrollToTop />
+            <AuthenticatedApp />
+          </Router>
+          <Toaster />
+        </ModulationEngineProvider>
       </QueryClientProvider>
     </AuthProvider>
   )
