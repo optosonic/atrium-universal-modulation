@@ -466,22 +466,15 @@ export const INITIAL_ASSIGNMENTS = [
 
 // Exact musical duration in quarter-note beats for each sync division (4/4 time)
 export const DIVISION_BEATS = {
-  '4/1': 16.0,    // 4 bars (16 beats = 8.0s at 120 BPM)
-  '2/1': 8.0,     // 2 bars (8 beats = 4.0s at 120 BPM)
-  '1/1': 4.0,     // 1 bar (4 beats = 2.0s at 120 BPM)
-  '1/2': 2.0,     // Half note (2 beats = 1.0s at 120 BPM)
-  '1/3': 4 / 3,   // 3 per bar (non-binary triplet bar division)
-  '1/4': 1.0,     // Quarter note (1 beat = 0.5s at 120 BPM)
-  '1/4T': 2 / 3,  // Quarter-note triplet
-  '1/5': 4 / 5,   // 5 per bar (quintuplet)
-  '1/6': 4 / 6,   // 6 per bar (sextuplet)
-  '1/7': 4 / 7,   // 7 per bar (septuplet)
-  '1/8': 0.5,     // Eighth note (1/2 beat = 0.25s at 120 BPM)
-  '1/8D': 0.75,   // Dotted eighth note
-  '1/9': 4 / 9,   // 9 per bar
-  '1/12': 4 / 12, // 12 per bar
-  '1/16': 0.25,   // Sixteenth note (1/4 beat = 0.125s at 120 BPM)
-  '1/32': 0.125,  // Thirty-second note
+  '4/1': 16.0,   // 4 bars (16 beats = 8.0s at 120 BPM)
+  '2/1': 8.0,    // 2 bars (8 beats = 4.0s at 120 BPM)
+  '1/1': 4.0,    // 1 bar (4 beats = 2.0s at 120 BPM)
+  '1/2': 2.0,    // Half note (2 beats = 1.0s at 120 BPM)
+  '1/4': 1.0,    // Quarter note (1 beat = 0.5s at 120 BPM)
+  '1/8': 0.5,    // Eighth note (1/2 beat = 0.25s at 120 BPM)
+  '1/16': 0.25,  // Sixteenth note (1/4 beat = 0.125s at 120 BPM)
+  '1/4T': 2 / 3, // Quarter-note triplet
+  '1/8D': 0.75,  // Dotted eighth note
 };
 
 /**
