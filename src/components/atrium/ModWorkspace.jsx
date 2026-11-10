@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   MODULATOR_TYPES,
+  INITIAL_MODULATORS,
+  INITIAL_ASSIGNMENTS,
+  INITIAL_PARAMETERS,
   evaluateModulator,
 } from '@/lib/modulationEngine';
 import {
@@ -26,27 +29,31 @@ import {
  *    polarity/invert toggles, and quick target assignment.
  */
 export default function ModWorkspace({
-  modulators,
+  modulators = INITIAL_MODULATORS,
   selectedModId,
-  onSelectMod,
-  onCreateModulator,
-  onUpdateModulator,
-  onDeleteModulator,
-  assignments,
-  parameters,
-  liveStates,
-  onAddAssignment,
-  onUpdateAssignment,
-  onRemoveAssignment,
-  onOpenLearnPopup,
-  simTime,
-  bpm,
+  onSelectMod = () => {},
+  onCreateModulator = () => {},
+  onUpdateModulator = () => {},
+  onDeleteModulator = () => {},
+  assignments = INITIAL_ASSIGNMENTS,
+  parameters = INITIAL_PARAMETERS,
+  liveStates = {},
+  onAddAssignment = () => {},
+  onUpdateAssignment = () => {},
+  onRemoveAssignment = () => {},
+  onOpenLearnPopup = () => {},
+  simTime = 0,
+  bpm = 120,
 }) {
   const canvasRef = useRef(null);
   const [quickTargetParam, setQuickTargetParam] = useState('cs_width');
 
+  const safeModulators = Array.isArray(modulators) ? modulators : INITIAL_MODULATORS;
+  const safeAssignments = Array.isArray(assignments) ? assignments : INITIAL_ASSIGNMENTS;
+  const safeParameters = parameters || INITIAL_PARAMETERS;
+
   const activeMod =
-    modulators.find((m) => m.id === selectedModId) || modulators[0];
+    safeModulators.find((m) => m.id === selectedModId) || safeModulators[0];
 
   // Draw real-time animated waveform preview for the selected modulator + ghost overlays of other active modulators
   useEffect(() => {
@@ -82,7 +89,7 @@ export default function ModWorkspace({
     ctx.stroke();
 
     // Draw secondary active modulators faintly in background for multi-mod visual context
-    modulators.forEach((mod) => {
+    safeModulators.forEach((mod) => {
       if (mod.id === activeMod.id || !mod.enabled) return;
       ctx.strokeStyle = `${mod.color}33`;
       ctx.lineWidth = 1.2;
@@ -157,7 +164,12 @@ export default function ModWorkspace({
   };
 
   const currentTypeMeta =
-    MODULATOR_TYPES.find((t) => t.type === activeMod?.type) || MODULATOR_TYPES[0];
+    (MODULATOR_TYPES || []).find((t) => t.type === activeMod?.type) ||
+    (MODULATOR_TYPES && MODULATOR_TYPES[0]) || {
+      type: 'LFO',
+      label: 'LFO',
+      subtypes: ['sine', 'triangle', 'saw', 'square'],
+    };
 
   return (
     <div className="flex-1 grid grid-cols-12 gap-0 bg-[#0d1115] overflow-hidden select-none">
@@ -192,11 +204,11 @@ export default function ModWorkspace({
         {/* Active Modulators Stack (Draggable chips) */}
         <div className="flex-1 mt-2 overflow-y-auto space-y-1 pr-0.5">
           <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#7a8b99] px-1 mb-1">
-            ACTIVE MODULATORS ({modulators.length})
+            ACTIVE MODULATORS ({safeModulators.length})
           </div>
-          {modulators.map((mod) => {
+          {safeModulators.map((mod) => {
             const isSelected = mod.id === activeMod?.id;
-            const modAssignCount = assignments.filter(
+            const modAssignCount = safeAssignments.filter(
               (a) => a.modulatorId === mod.id
             ).length;
             const liveOut = evaluateModulator(mod, simTime, bpm);
@@ -258,7 +270,7 @@ export default function ModWorkspace({
                   <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#151c22] text-[#9fb1bd] border border-[#28333d]">
                     {modAssignCount}
                   </span>
-                  {modulators.length > 1 && (
+                  {safeModulators.length > 1 && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -574,7 +586,7 @@ export default function ModWorkspace({
           <div className="flex items-center gap-1.5">
             <Sliders className="w-3.5 h-3.5 text-[#38bdf8]" />
             <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-white">
-              MODULATION ROUTING ({assignments.length})
+              MODULATION ROUTING ({safeAssignments.length})
             </span>
           </div>
 
@@ -586,7 +598,7 @@ export default function ModWorkspace({
                 onChange={(e) => setQuickTargetParam(e.target.value)}
                 className="bg-[#0b0e11] border border-[#2b3640] rounded px-1.5 py-0.5 text-[9px] text-[#c5d4e0] focus:outline-none"
               >
-                {Object.values(parameters).map((p) => (
+                {Object.values(safeParameters).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.group} / {p.name}
                   </option>
@@ -605,14 +617,14 @@ export default function ModWorkspace({
 
         {/* Assignment Matrix List: SOURCE → DESTINATION */}
         <div className="flex-1 overflow-y-auto space-y-1.5 my-1.5 pr-0.5">
-          {assignments.length === 0 ? (
+          {safeAssignments.length === 0 ? (
             <div className="h-full flex items-center justify-center text-center text-[11px] text-[#6d7f8d] border border-dashed border-[#242e38] rounded p-4">
               Drag any modulator onto a knob or use "+ Route" above to create universal modulation links.
             </div>
           ) : (
-            assignments.map((asgn) => {
-              const mod = modulators.find((m) => m.id === asgn.modulatorId);
-              const param = parameters[asgn.parameterId];
+            safeAssignments.map((asgn) => {
+              const mod = safeModulators.find((m) => m.id === asgn.modulatorId);
+              const param = safeParameters[asgn.parameterId];
               if (!mod || !param) return null;
               const liveVal = liveStates[param.id]?.modulatedValue ?? param.baseValue;
 
