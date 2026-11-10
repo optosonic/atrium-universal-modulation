@@ -269,17 +269,13 @@ function useCreateModulationEngine() {
 
 export function ModulationEngineProvider({ children }) {
   const engine = useCreateModulationEngine();
-  return (
-    <ModulationEngineContext.Provider value={engine}>
-      {children}
-    </ModulationEngineContext.Provider>
+  return React.createElement(
+    ModulationEngineContext.Provider,
+    { value: engine },
+    children
   );
 }
 
 export default function useModulationEngine() {
-  const ctx = useContext(ModulationEngineContext);
-  if (!ctx) {
-    throw new Error('useModulationEngine must be used within ModulationEngineProvider');
-  }
-  return ctx;
+  return useContext(ModulationEngineContext);
 }

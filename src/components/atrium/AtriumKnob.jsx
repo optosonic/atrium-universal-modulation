@@ -26,15 +26,9 @@ export default function AtriumKnob({
   const [isDragOver, setIsDragOver] = useState(false);
   const dragStartRef = useRef(null);
 
-  let engineDragMod = null;
-  let engineNotice = null;
-  try {
-    const engine = useModulationEngine();
-    engineDragMod = engine?.draggingModulator || null;
-    engineNotice = engine?.lastAssignedNotice || null;
-  } catch {
-    // Fallback if rendered outside provider
-  }
+  const engine = useModulationEngine();
+  const engineDragMod = engine?.draggingModulator || null;
+  const engineNotice = engine?.lastAssignedNotice || null;
 
   if (!param || !liveState) return null;
 

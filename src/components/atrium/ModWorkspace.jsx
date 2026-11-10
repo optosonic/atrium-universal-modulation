@@ -50,12 +50,7 @@ export default function ModWorkspace({
   const [localTargetParam, setLocalTargetParam] = useState('cs_width');
   const [showBgTraces, setShowBgTraces] = useState(true);
 
-  let engineCtx = null;
-  try {
-    engineCtx = useModulationEngine();
-  } catch {
-    engineCtx = null;
-  }
+  const engineCtx = useModulationEngine();
 
   const selectedTargetParamId = engineCtx?.selectedTargetParamId || localTargetParam;
   const handleSelectTargetParam = (paramId) => {
