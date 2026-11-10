@@ -3,6 +3,7 @@ import {
   MODULATOR_TYPES,
   evaluateModulator,
 } from '@/lib/modulationEngine';
+import StepSequencerOverlay from './StepSequencerOverlay';
 import {
   Plus,
   Trash2,
@@ -407,7 +408,25 @@ export default function ModWorkspace({
                 <button
                   key={st}
                   type="button"
-                  onClick={() => onUpdateModulator(activeMod.id, { subtype: st })}
+                  onClick={() => {
+                    const patch = { subtype: st };
+                    if (activeMod.type === 'STEP') {
+                      const cur = activeMod.steps || [];
+                      if (st === '16-step' && cur.length !== 16) {
+                        patch.steps = Array.from({ length: 16 }, (_, i) =>
+                          cur[i % cur.length] ?? 0
+                        );
+                      } else if (st === '8-step' && cur.length !== 8) {
+                        patch.steps = cur.slice(0, 8);
+                      } else if (st === 'euclidean') {
+                        const len = cur.length || 8;
+                        patch.steps = Array.from({ length: len }, (_, i) =>
+                          (i * 3) % len < 3 ? 0.85 : -0.6
+                        );
+                      }
+                    }
+                    onUpdateModulator(activeMod.id, patch);
+                  }}
                   className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase transition-all ${
                     activeMod.subtype === st
                       ? 'bg-[#38bdf8] text-[#081218] font-bold shadow-[0_0_6px_rgba(56,189,248,0.4)]'
@@ -447,8 +466,55 @@ export default function ModWorkspace({
               </div>
 
               <div className="flex items-center gap-1">
+                {activeMod.type === 'STEP' && (
+                  <div className="flex items-center gap-1 mr-2 border-r border-[#1f2a33] pr-2">
+                    <span className="text-[8px] font-mono text-[#5bc0de]">
+                      DRAG ACROSS BARS
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdateModulator(activeMod.id, {
+                          steps: (activeMod.steps || []).map(
+                            () => +(Math.random() * 2 - 1).toFixed(2)
+                          ),
+                        })
+                      }
+                      className="px-1.5 py-0.2 rounded bg-[#151d24] hover:bg-[#1f2b35] text-[8px] font-mono text-[#9fb1bd] hover:text-white border border-[#26323d]"
+                      title="Randomize all steps"
+                    >
+                      RND
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdateModulator(activeMod.id, {
+                          steps: (activeMod.steps || []).map((v) => -v),
+                        })
+                      }
+                      className="px-1.5 py-0.2 rounded bg-[#151d24] hover:bg-[#1f2b35] text-[8px] font-mono text-[#9fb1bd] hover:text-white border border-[#26323d]"
+                      title="Invert all steps"
+                    >
+                      INV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdateModulator(activeMod.id, {
+                          steps: (activeMod.steps || []).map(() =>
+                            activeMod.polarity === 'unipolar' ? -1 : 0
+                          ),
+                        })
+                      }
+                      className="px-1.5 py-0.2 rounded bg-[#151d24] hover:bg-[#1f2b35] text-[8px] font-mono text-[#9fb1bd] hover:text-white border border-[#26323d]"
+                      title="Clear all steps"
+                    >
+                      CLR
+                    </button>
+                  </div>
+                )}
                 <span className="text-[8px] font-mono text-[#6c7d8c] mr-0.5">
-                  DRAG WAVE TO ZOOM
+                  {activeMod.type === 'STEP' ? 'ZOOM' : 'DRAG WAVE TO ZOOM'}
                 </span>
                 <button
                   type="button"
@@ -487,11 +553,17 @@ export default function ModWorkspace({
               onMouseDown={activeMod.type !== 'STEP' ? handleScopeMouseDown : undefined}
               onWheel={handleScopeWheel}
               onDoubleClick={() => {
-                setTimeZoom(1.0);
-                setAmpZoom(1.0);
+                if (activeMod.type !== 'STEP') {
+                  setTimeZoom(1.0);
+                  setAmpZoom(1.0);
+                }
               }}
               className="relative w-full cursor-ns-resize group"
-              title="Drag up/down or left/right to zoom waveform • Shift+drag for vertical gain • Double-click to reset zoom"
+              title={
+                activeMod.type === 'STEP'
+                  ? undefined
+                  : 'Drag up/down or left/right to zoom waveform • Shift+drag for vertical gain • Double-click to reset zoom'
+              }
             >
               <canvas
                 ref={canvasRef}
@@ -500,35 +572,17 @@ export default function ModWorkspace({
                 className="w-full h-full block"
               />
 
-              {/* Interactive Step Sequencer Bars when type === 'STEP' */}
+              {/* Interactive Multi-Drag Step Sequencer when type === 'STEP' */}
               {activeMod.type === 'STEP' && (
-                <div className="absolute inset-0 flex items-end gap-1 p-2 pb-3 bg-black/40">
-                  {activeMod.steps.map((val, idx) => (
-                    <div
-                      key={idx}
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickNorm = 1 - (e.clientY - rect.top) / rect.height;
-                        const mapped = Math.max(-1, Math.min(1, clickNorm * 2 - 1));
-                        const nextSteps = [...activeMod.steps];
-                        nextSteps[idx] = mapped;
-                        onUpdateModulator(activeMod.id, { steps: nextSteps });
-                      }}
-                      className="flex-1 h-full bg-[#12181f]/70 border border-[#2c3844] rounded-sm relative cursor-ns-resize flex items-end overflow-hidden"
-                      title={`Step ${idx + 1}: Click to set level`}
-                    >
-                      <div
-                        style={{
-                          height: `${((val + 1) / 2) * 100}%`,
-                          backgroundColor: `${activeMod.color}88`,
-                        }}
-                        className="w-full border-t-2 border-white"
-                      />
-                    </div>
-                  ))}
-                </div>
+                <StepSequencerOverlay
+                  modulator={activeMod}
+                  simTime={simTime}
+                  bpm={bpm}
+                  onUpdateSteps={(nextSteps) =>
+                    onUpdateModulator(activeMod.id, { steps: nextSteps })
+                  }
+                />
               )}
-
             </div>
 
             {/* Dedicated Bottom Drag Handle outside the canvas so troughs are never covered */}
