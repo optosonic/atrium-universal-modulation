@@ -60,6 +60,14 @@ export default function AtriumTopAndTrackBar({
         <div className="w-7 h-7 rounded-full border border-[#5bc0de]/60 bg-[#101820] flex items-center justify-center text-[#7ccce5] text-[11px] font-bold">
           ↕
         </div>
+        <Link
+          to="/universal-modulator"
+          className="ml-2 px-2.5 py-1 rounded atrium-btn-cyan text-[9px] font-bold tracking-wider flex items-center gap-1"
+          title="Open Isolated Universal Modulator Only Page (for Cursor handoff)"
+        >
+          <span>MODULATOR ONLY VIEW</span>
+          <ExternalLink className="w-3 h-3" />
+        </Link>
       </div>
 
       {/* Center-Left: Transport Controls (RTZ, REC, PLAY, STOP, LOOP, CLICK) */}

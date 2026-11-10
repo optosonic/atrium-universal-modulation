@@ -36,6 +36,7 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/" element={<UniversalModulatorStandalone />} />
+      <Route path="/universal-modulator" element={<UniversalModulatorStandalone />} />
       <Route path="/atrium" element={<AtriumPrototype />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>

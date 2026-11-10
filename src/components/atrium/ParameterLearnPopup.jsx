@@ -10,24 +10,26 @@ import { X, Plus, Trash2, Volume2, Activity, Sliders } from 'lucide-react';
 export default function ParameterLearnPopup({
   param,
   liveState,
-  modulators,
-  assignments,
-  onClose,
-  onAddAssignment,
-  onUpdateAssignment,
-  onRemoveAssignment,
-  onCreateModulatorAndAssign,
+  modulators = [],
+  assignments = [],
+  onClose = () => {},
+  onAddAssignment = () => {},
+  onUpdateAssignment = () => {},
+  onRemoveAssignment = () => {},
+  onCreateModulatorAndAssign = () => {},
   initialTab = 'MOD',
 }) {
+  const safeModulators = Array.isArray(modulators) ? modulators : [];
+  const safeAssignments = Array.isArray(assignments) ? assignments : [];
   const [activeTab, setActiveTab] = useState(initialTab); // 'MIDI' | 'OSC' | 'MOD'
   const [midiScope, setMidiScope] = useState('fixed'); // 'fixed' | 'selected'
   const [midiMin, setMidiMin] = useState(0);
   const [midiMax, setMidiMax] = useState(127);
-  const [selectedModId, setSelectedModId] = useState(modulators[0]?.id || '');
+  const [selectedModId, setSelectedModId] = useState(safeModulators[0]?.id || '');
 
   if (!param) return null;
 
-  const paramAssignments = assignments.filter((a) => a.parameterId === param.id);
+  const paramAssignments = safeAssignments.filter((a) => a.parameterId === param.id);
   const span = param.max - param.min;
 
   return (
@@ -251,7 +253,7 @@ export default function ParameterLearnPopup({
               onChange={(e) => setSelectedModId(e.target.value)}
               className="flex-1 bg-[#0c1013] border border-[#2c363f] rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-[#38bdf8]"
             >
-              {modulators.map((m) => (
+              {safeModulators.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name} ({m.type} • {m.subtype})
                 </option>
@@ -286,7 +288,7 @@ export default function ParameterLearnPopup({
           ) : (
             <div className="space-y-2.5">
               {paramAssignments.map((asgn) => {
-                const mod = modulators.find((m) => m.id === asgn.modulatorId);
+                const mod = safeModulators.find((m) => m.id === asgn.modulatorId);
                 if (!mod) return null;
                 return (
                   <div
