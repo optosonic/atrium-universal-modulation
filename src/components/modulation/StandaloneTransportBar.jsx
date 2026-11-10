@@ -4,28 +4,24 @@ import {
   Pause,
   RotateCcw,
   Power,
-  Code2,
   ExternalLink,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 /**
  * Slim reference transport (play / pause / reset + tempo) for testing the engine.
- * This is NOT the Atrium DAW transport — it is intentionally minimal.
  */
 export default function StandaloneTransportBar({
   isPlaying,
   onTogglePlay,
   onResetTransport,
   bpm,
-  setBpm,
   simTime,
   automationEnabled,
   setAutomationEnabled,
   onChangeBpm,
   modCount,
   assignmentCount,
-  onOpenSpec,
 }) {
   const totalBeats = (simTime * bpm) / 60;
   const bar = Math.floor(totalBeats / 4) + 1;
@@ -42,7 +38,7 @@ export default function StandaloneTransportBar({
         </div>
         <div className="w-px h-5 bg-[#39444d]" />
         <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[#5bc0de] truncate">
-          Universal Modulation · Standalone Reference
+          Universal Modulation · Standalone Demonstration
         </span>
       </div>
 
@@ -107,17 +103,10 @@ export default function StandaloneTransportBar({
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onOpenSpec}
-          className="atrium-btn-cyan h-7 px-2.5 rounded text-[9px] font-bold tracking-wider flex items-center gap-1"
-        >
-          <Code2 className="w-3 h-3" /> CURSOR HANDOFF SPEC
-        </button>
         <Link
           to="/atrium"
-          className="atrium-btn-metal h-7 px-2.5 rounded border border-[#3d4a55] text-[9px] font-bold text-[#c5d4e0] flex items-center gap-1"
-          title="Open the full Atrium DAW prototype"
+          className="atrium-btn-metal h-7 px-2.5 rounded border border-[#3d4a55] text-[9px] font-bold text-[#c5d4e0] hover:text-white flex items-center gap-1"
+          title="Open the full Atrium DAW prototype with shared modulation state"
         >
           FULL ATRIUM <ExternalLink className="w-3 h-3" />
         </Link>

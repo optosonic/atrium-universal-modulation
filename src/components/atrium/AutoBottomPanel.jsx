@@ -422,6 +422,7 @@ export default function AutoBottomPanel({
             onOpenLearnPopup={onOpenLearnPopup}
             simTime={simTime}
             bpm={bpm}
+            showTargetInspector={true}
           />
         ) : (
           <div className="flex-1 flex flex-col bg-[#0b0e11] relative overflow-hidden">

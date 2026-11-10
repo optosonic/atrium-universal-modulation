@@ -1,20 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
 import useModulationEngine from '@/hooks/useModulationEngine';
 import StandaloneTransportBar from '@/components/modulation/StandaloneTransportBar';
 import ModulationTargetBench from '@/components/modulation/ModulationTargetBench';
-import CursorHandoffSpec from '@/components/modulation/CursorHandoffSpec';
 import ModWorkspace from '@/components/atrium/ModWorkspace';
 import ParameterLearnPopup from '@/components/atrium/ParameterLearnPopup';
 
 /**
- * UNIVERSAL MODULATOR — STANDALONE REFERENCE VIEW
- * The modulation system on its own: modulator library, editor, routing matrix,
- * MIDI | OSC | MOD learn popup and a minimal bench of modulation targets.
- * No Atrium DAW shell — this is the surface handed to Cursor for integration.
+ * UNIVERSAL MODULATOR — STANDALONE DEMONSTRATION VIEW
+ * Authoritative reference view: full target demonstration bench at the top +
+ * 3-column modulation workspace below, sharing live state with the full Atrium view.
  */
 export default function UniversalModulatorStandalone() {
   const engine = useModulationEngine();
-  const [specOpen, setSpecOpen] = useState(false);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#121619] text-[#d6e2ea] overflow-hidden">
@@ -23,14 +20,12 @@ export default function UniversalModulatorStandalone() {
         onTogglePlay={engine.togglePlay}
         onResetTransport={engine.resetTransport}
         bpm={engine.bpm}
-        setBpm={engine.setBpm}
         simTime={engine.simTime}
         automationEnabled={engine.automationEnabled}
         setAutomationEnabled={engine.setAutomationEnabled}
         onChangeBpm={engine.setBpm}
         modCount={engine.modulators.length}
         assignmentCount={engine.assignments.length}
-        onOpenSpec={() => setSpecOpen(true)}
       />
 
       {/* MODULATION TARGETS — the bench that proves the engine is universal */}
@@ -39,9 +34,39 @@ export default function UniversalModulatorStandalone() {
           <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#7a8b99]">
             Modulation Targets — Any Atrium Parameter
           </span>
-          <span className="text-[9px] font-mono text-[#5bc0de]">
-            Drag a source onto any control · right-click for MIDI | OSC | MOD
-          </span>
+
+          {/* Active Drag Indicator or Assignment Confirmation */}
+          {engine.draggingModulator ? (
+            <span
+              className="px-2 py-0.5 rounded text-[9px] font-mono font-bold flex items-center gap-1.5 border"
+              style={{
+                backgroundColor: `${engine.draggingModulator.color}20`,
+                borderColor: engine.draggingModulator.color,
+                color: '#ffffff',
+              }}
+            >
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: engine.draggingModulator.color }}
+              />
+              PATCHING {engine.draggingModulator.name} — Drop onto any highlighted control below
+            </span>
+          ) : engine.lastAssignedNotice ? (
+            <span
+              className="px-2 py-0.5 rounded text-[9px] font-mono font-bold flex items-center gap-1.5 border"
+              style={{
+                backgroundColor: `${engine.lastAssignedNotice.color}22`,
+                borderColor: engine.lastAssignedNotice.color,
+                color: '#ffffff',
+              }}
+            >
+              ✓ {engine.lastAssignedNotice.modName} → {engine.lastAssignedNotice.paramName}
+            </span>
+          ) : (
+            <span className="text-[9px] font-mono text-[#5bc0de]">
+              Drag a source onto any control · click or right-click any knob for MIDI | OSC | MOD
+            </span>
+          )}
         </div>
         <ModulationTargetBench
           parameters={engine.parameters}
@@ -49,7 +74,7 @@ export default function UniversalModulatorStandalone() {
           onChangeBase={engine.changeBase}
           onOpenLearnPopup={engine.openLearnPopup}
           onDropModulator={engine.addAssignment}
-          learnModeActive={false}
+          learnModeActive={engine.learnModeActive}
           selectedLearnParamId={engine.activeLearnParamId}
         />
       </section>
@@ -88,6 +113,7 @@ export default function UniversalModulatorStandalone() {
           onOpenLearnPopup={engine.openLearnPopup}
           simTime={engine.simTime}
           bpm={engine.bpm}
+          showTargetInspector={false}
         />
       </section>
 
@@ -104,8 +130,6 @@ export default function UniversalModulatorStandalone() {
           onCreateModulatorAndAssign={engine.createModulatorAndAssign}
         />
       )}
-
-      {specOpen && <CursorHandoffSpec onClose={() => setSpecOpen(false)} />}
     </div>
   );
 }
