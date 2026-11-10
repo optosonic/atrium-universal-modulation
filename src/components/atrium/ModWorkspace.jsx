@@ -158,6 +158,9 @@ export default function ModWorkspace({
 
     ctx.clearRect(0, 0, w, h);
 
+    // When STEP is active, StepSequencerOverlay renders the dedicated step grid directly
+    if (activeMod.type === 'STEP') return;
+
     const windowSeconds = 2.0 / timeZoom; // Zoomable time window
 
     // Subtle dark grid matching Atrium's AUTO lane grid (scales with zoom)
@@ -636,7 +639,7 @@ export default function ModWorkspace({
                     }
                     className="w-full bg-[#090c0f] text-[10px] font-mono text-[#38bdf8] rounded px-1 py-0.5 mt-0.5 border border-[#26313a]"
                   >
-                    {['1/1', '1/2', '1/4', '1/8', '1/16', '1/4T', '1/8D'].map((r) => (
+                    {['4/1', '2/1', '1/1', '1/2', '1/4', '1/8', '1/16', '1/4T', '1/8D'].map((r) => (
                       <option key={r} value={r}>
                         {r}
                       </option>

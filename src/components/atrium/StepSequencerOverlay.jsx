@@ -1,14 +1,5 @@
 import React, { useRef, useState } from 'react';
-
-const SYNC_RATES = {
-  '1/1': 0.5,
-  '1/2': 1.0,
-  '1/4': 2.0,
-  '1/8': 4.0,
-  '1/16': 8.0,
-  '1/4T': 3.0,
-  '1/8D': 2.66,
-};
+import { getStepProgress } from '@/lib/modulationEngine';
 
 /**
  * Interactive multi-drag Step Sequencer overlay for STEP modulators.
@@ -28,23 +19,12 @@ export default function StepSequencerOverlay({
   const [hoverStepIdx, setHoverStepIdx] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const steps = modulator.steps && modulator.steps.length
-    ? modulator.steps
-    : [0.8, 0.2, 0.6, -0.4, 0.9, -0.2, 0.5, -0.7];
+  const { steps, idx: activeStepIdx } = getStepProgress(modulator, simTime, bpm);
 
   // Keep draft ref synced when not actively dragging
   if (!isDragging) {
     stepsDraftRef.current = steps;
   }
-
-  // Compute current active step index from transport time
-  const tempoScale = (bpm || 120) / 120;
-  const freq = modulator.tempoSync
-    ? (SYNC_RATES[modulator.syncRate] || 1.0) * tempoScale
-    : modulator.rate;
-  const phaseOffset = (modulator.phase || 0) / 360;
-  const cyclePos = (((simTime * freq + phaseOffset) % 1) + 1) % 1;
-  const activeStepIdx = Math.floor(cyclePos * steps.length) % steps.length;
 
   const computeStepAndValue = (clientX, clientY) => {
     const el = containerRef.current;
@@ -149,7 +129,7 @@ export default function StepSequencerOverlay({
       onMouseMove={handleMouseMoveHover}
       onMouseLeave={() => !isDragging && setHoverStepIdx(null)}
       onDoubleClick={handleDoubleClick}
-      className="absolute inset-0 flex items-stretch gap-1 px-2 py-2 bg-[#070a0d]/80 select-none cursor-crosshair"
+      className="absolute inset-0 flex items-stretch gap-1 px-2 py-2 bg-[#070a0d] select-none cursor-crosshair"
       title="Click and drag across bars to draw steps • Alt+drag or double-click to zero"
     >
       {steps.map((val, idx) => {

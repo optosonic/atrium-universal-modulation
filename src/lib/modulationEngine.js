@@ -364,12 +364,12 @@ export const INITIAL_MODULATORS = [
     type: 'STEP',
     subtype: '8-step',
     rate: 2.0,
-    syncRate: '1/16',
+    syncRate: '1/4',
     tempoSync: true,
     depth: 0.85,
     phase: 0,
     offset: 0,
-    smoothing: 0.15,
+    smoothing: 0.0,
     polarity: 'unipolar',
     enabled: true,
     color: '#fbbf24', // Amber
@@ -448,16 +448,38 @@ export const INITIAL_ASSIGNMENTS = [
   },
 ];
 
-// Sync division multipliers relative to 120 BPM (2 beats/sec)
-const SYNC_RATES = {
-  '1/1': 0.5,
-  '1/2': 1.0,
-  '1/4': 2.0,
-  '1/8': 4.0,
-  '1/16': 8.0,
-  '1/4T': 3.0,
-  '1/8D': 2.66,
+// Exact musical duration in quarter-note beats for each sync division (4/4 time)
+// At 120 BPM: 1 beat (1/4) = 0.5s, 1 bar (1/1) = 4 beats = 2.0s
+export const DIVISION_BEATS = {
+  '4/1': 16.0,   // 4 bars (16 beats = 8.0s at 120 BPM)
+  '2/1': 8.0,    // 2 bars (8 beats = 4.0s at 120 BPM)
+  '1/1': 4.0,    // 1 bar (4 beats = 2.0s at 120 BPM)
+  '1/2': 2.0,    // Half note (2 beats = 1.0s at 120 BPM)
+  '1/4': 1.0,    // Quarter note (1 beat = 0.5s at 120 BPM)
+  '1/8': 0.5,    // Eighth note (1/2 beat = 0.25s at 120 BPM)
+  '1/16': 0.25,  // Sixteenth note (1/4 beat = 0.125s at 120 BPM)
+  '1/4T': 2 / 3, // Quarter-note triplet
+  '1/8D': 0.75,  // Dotted eighth note
 };
+
+/**
+ * Helper to compute the current active step position for a STEP modulator
+ */
+export function getStepProgress(mod, t, bpm = 120) {
+  const steps = mod.steps && mod.steps.length ? mod.steps : [0.8, 0.2, 0.6, -0.4, 0.9, -0.2, 0.5, -0.7];
+  const beatsPerSec = (bpm || 120) / 60;
+  const beatsPerStep = DIVISION_BEATS[mod.syncRate] || 1.0;
+  // In tempoSync: 1 step advances every `beatsPerStep` beats (e.g. 1/4 = 1 beat per step = 2 steps/sec at 120 BPM)
+  // In free mode: `mod.rate` is steps per second
+  const stepsPerSec = mod.tempoSync ? beatsPerSec / beatsPerStep : mod.rate;
+  const phaseSteps = ((mod.phase || 0) / 360) * steps.length;
+  const totalStepsElapsed = t * stepsPerSec + phaseSteps;
+  const wrappedStepPos = ((totalStepsElapsed % steps.length) + steps.length) % steps.length;
+  const idx = Math.floor(wrappedStepPos);
+  const nextIdx = (idx + 1) % steps.length;
+  const stepFrac = wrappedStepPos - idx;
+  return { steps, idx, nextIdx, stepFrac };
+}
 
 // Pseudo-random deterministic noise helper
 function pseudoNoise(x, seed = 1) {
@@ -472,13 +494,13 @@ function pseudoNoise(x, seed = 1) {
 export function evaluateModulator(mod, t, bpm = 120) {
   if (!mod || !mod.enabled) return 0;
 
-  const tempoScale = bpm / 120;
-  const freq = mod.tempoSync
-    ? (SYNC_RATES[mod.syncRate] || 1.0) * tempoScale
-    : mod.rate;
+  const beatsPerSec = (bpm || 120) / 60;
+  const beatsPerCycle = DIVISION_BEATS[mod.syncRate] || 4.0;
+  // Cycles per second: in sync mode, 1 cycle takes `beatsPerCycle` beats
+  const freq = mod.tempoSync ? beatsPerSec / beatsPerCycle : mod.rate;
 
-  const phaseOffset = ((mod.phase || 0) / 360);
-  const cyclePos = ((t * freq + phaseOffset) % 1 + 1) % 1; // 0..1 within cycle
+  const phaseOffset = (mod.phase || 0) / 360;
+  const cyclePos = (((t * freq + phaseOffset) % 1) + 1) % 1; // 0..1 within cycle
   const rad = cyclePos * Math.PI * 2;
 
   let raw = 0; // -1 to +1
@@ -511,8 +533,8 @@ export function evaluateModulator(mod, t, bpm = 120) {
     }
 
     case 'RANDOM': {
-      const stepIndex = Math.floor(t * freq * 2 + phaseOffset * 10);
-      const frac = (t * freq * 2 + phaseOffset * 10) - stepIndex;
+      const stepIndex = Math.floor(t * freq + phaseOffset * 10);
+      const frac = t * freq + phaseOffset * 10 - stepIndex;
       const v0 = pseudoNoise(stepIndex, 13);
       const v1 = pseudoNoise(stepIndex + 1, 13);
 
@@ -556,14 +578,11 @@ export function evaluateModulator(mod, t, bpm = 120) {
     }
 
     case 'STEP': {
-      const steps = mod.steps && mod.steps.length ? mod.steps : [0.8, 0.2, 0.6, -0.4, 0.9, -0.2, 0.5, -0.7];
-      const idx = Math.floor(cyclePos * steps.length) % steps.length;
-      const nextIdx = (idx + 1) % steps.length;
-      const stepFrac = (cyclePos * steps.length) % 1;
+      const { steps, idx, nextIdx, stepFrac } = getStepProgress(mod, t, bpm);
       const glide = mod.smoothing || 0;
       const s0 = steps[idx];
       const s1 = steps[nextIdx];
-      raw = glide > 0.02 ? s0 + (s1 - s0) * Math.pow(stepFrac, 1 / (glide * 3 + 0.2)) : s0;
+      raw = glide > 0.02 ? s0 + (s1 - s0) * (stepFrac * glide) : s0;
       break;
     }
 
